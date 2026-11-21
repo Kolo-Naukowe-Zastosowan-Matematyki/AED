@@ -166,6 +166,27 @@ class CzytnikiTest(unittest.TestCase):
         self.assertEqual(recs[0]["region"], "mazowieckie")  # z odwrotnego geokodowania (atrapa)
 
 
+class WyszukiwanieTest(unittest.TestCase):
+    def test_search_asks_inflected_forms_and_filters(self):
+        from unittest import mock
+        from rozwiazanie.scraping import danegov as dg
+        zbiory = {"defibrylatorów": {"id": "9", "attributes": {"title": "Wykaz defibrylatorów AED w Legionowie"}},
+                  "AED": {"id": "7", "attributes": {"title": "Raedwald – rejestr zabytków"}}}
+        pytania = []
+
+        def get_json(url, timeout=25):
+            q = dg.urllib.parse.unquote(url.split("q=")[1].split("&")[0])
+            pytania.append(q)
+            return {"data": [zbiory[q]] if q in zbiory else [], "links": {}}
+        traf = []
+        with mock.patch.object(dg, "_get_json", side_effect=get_json):
+            found = dg.find_datasets({"queries": ["defibrylator"]}, traf)
+        self.assertIn("defibrylatorów", pytania)
+        self.assertEqual(pytania.count("defibrylator"), 1)  # fraza z config.json nie jest powtarzana
+        self.assertEqual([d["id"] for d in found], ["9"])     # „Raedwald” nie jest zbiorem AED
+        self.assertIn(("AED", "7", "Raedwald – rejestr zabytków", False), traf)
+
+
 class OdwrotneTest(unittest.TestCase):
     def test_reverse_tries_axis_variants_and_remembers(self):
         import tempfile

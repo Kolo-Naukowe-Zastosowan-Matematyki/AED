@@ -35,7 +35,6 @@ API = "https://api.dane.gov.pl/1.4"
 PORTAL = "https://dane.gov.pl"
 HEADERS = {"Accept": "application/vnd.api+json, application/json", "User-Agent": "aed-prototyp/0.1"}
 MAX_PAGES = 60  # 60 x 100 = 6000 wierszy na zasób – wystarczy na prototyp
-KEYWORDS = ("defibryl", "aed")
 _LAST_RAW: dict[str, bytes] = {}  # początek ostatnio pobranego pliku (do diagnozy pominiętych zasobów)
 
 
@@ -152,17 +151,31 @@ def _relevant(dataset: dict) -> bool:
     tags = _attr(dataset, "tags", "keywords", default=[])
     if isinstance(tags, list):
         blob += " " + " ".join(_text(t.get("name") if isinstance(t, dict) else t) for t in tags).lower()
-    return any(k in blob for k in KEYWORDS)
+    return "defibryl" in blob or re.search(r"\baed\b", blob) is not None
 
 
-def find_datasets(cfg: dict) -> list[dict]:
+# wyszukiwarka dane.gov.pl nie zawsze odmienia wyrazy („defibrylator” nie znajduje „Wykaz defibrylatorów”),
+# dlatego pytamy o kilka form; nadmiarowe trafienia odsiewa _relevant
+QUERIES = ["defibrylator", "defibrylatory", "defibrylatorów", "defibrylatorach", "defibrylatora", "AED",
+           "automatyczny defibrylator zewnętrzny", "automatycznych defibrylatorów zewnętrznych"]
+
+
+def find_datasets(cfg: dict, trafienia: list | None = None) -> list[dict]:
+    """Zbiory o AED. trafienia (opcjonalnie) dostaje (fraza, id, tytuł, czy_pasuje) do diagnozy wyszukiwania."""
     found: dict[str, dict] = {}
-    for q in cfg.get("queries", ["defibrylator", "defibrylatory AED"]):
+    queries = list(dict.fromkeys(QUERIES + list(cfg.get("queries", []))))
+    for q in queries:
         url = f"{API}/datasets?q={urllib.parse.quote(q)}"
-        for body in _paged(url, max_pages=3):
-            for ds in body.get("data", []):
-                if _relevant(ds):
-                    found[str(ds["id"])] = ds
+        try:
+            for body in _paged(url, max_pages=3):
+                for ds in body.get("data", []):
+                    ok = _relevant(ds)
+                    if trafienia is not None:
+                        trafienia.append((q, str(ds["id"]), re.sub(r"<[^>]+>", "", _text(_attr(ds, "title"))), ok))
+                    if ok:
+                        found[str(ds["id"])] = ds
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Wyszukiwanie „%s” w dane.gov.pl nie powiodło się: %s", q, exc)
     for did in cfg.get("dataset_ids", []):
         try:
             found[str(did)] = _get_json(f"{API}/datasets/{did}")["data"]

@@ -1,11 +1,7 @@
 {
   "danegov": {
     "enabled": true,
-    "queries": [
-      "defibrylator",
-      "defibrylatory",
-      "AED defibrylator"
-    ],
+    "queries": [],
     "dataset_ids": [],
     "resource_ids": []
   },

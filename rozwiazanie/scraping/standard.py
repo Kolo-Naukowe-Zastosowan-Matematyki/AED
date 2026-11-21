@@ -309,6 +309,11 @@ def _synonimy() -> dict[str, list[str]]:
     return {c["pole"]: [norm(s) for s in c.get("synonimy", [])] for c in KOLUMNY}
 
 
+# pola opisujące miejsce konkretnego AED: długie elaboraty i teksty wspólne dla całego zbioru są odrzucane
+OPISOWE = ("building_name", "exact_location", "street_address", "opening_hours")
+MAX_OPIS = 300
+
+
 def _probka(rows: list[dict], col: str, n: int = 200) -> list:
     out = []
     for r in rows[:n * 3]:
@@ -382,6 +387,21 @@ def mapuj_kolumny(columns: list[str], rows: list[dict], geo_roles: dict[str, str
             uwagi.append(f"{pole}: kolumna „{mapping[pole]}” nie zawiera liczb, szukam po wartościach")
             used.discard(mapping.pop(pole))
 
+    # 4b) kolumny opisowe: ogólny tekst powtarzany w każdym wierszu (np. opis, czym jest AED) albo bardzo długie
+    #     elaboraty nie są lokalizacją konkretnego urządzenia, więc nie trafiają do pól miejsca
+    for pole in OPISOWE:
+        if pole not in mapping:
+            continue
+        vals = [tekst(v) for v in _probka(rows, mapping[pole])]
+        if not vals:
+            continue
+        dlugie = sorted(len(v) for v in vals)[(len(vals) - 1) // 2] > MAX_OPIS
+        wspolny = len(vals) >= 3 and max(vals.count(v) for v in set(vals)) >= 0.9 * len(vals) and len(vals[0]) > 60
+        if dlugie or wspolny:
+            powod = "ten sam długi tekst we wszystkich wierszach" if wspolny else "bardzo długie opisy"
+            uwagi.append(f"{pole}: pominięto kolumnę „{mapping[pole]}” ({powod}, to nie jest lokalizacja urządzenia)")
+            used.discard(mapping.pop(pole))
+
     # 5) wykrywanie po wartościach
     pair_col = None
     free = [c for c in columns if c not in used]
@@ -443,7 +463,9 @@ def mapuj_kolumny(columns: list[str], rows: list[dict], geo_roles: dict[str, str
 def standaryzuj(row: dict, mapa: dict, ctx: dict, geokoder=None) -> tuple[dict | None, str, list[str]]:
     """Wiersz źródła -> (rekord w złotym standardzie | None, powód odrzucenia, uwagi)."""
     m = mapa["pola"]
-    g = lambda pole: tekst(row.get(m[pole])) if pole in m else ""
+    def g(pole: str) -> str:
+        v = tekst(row.get(m[pole])) if pole in m else ""
+        return "" if pole in OPISOWE and len(v) > MAX_OPIS else v  # pojedynczy elaborat w komórce
     uwagi: list[str] = []
     rec = {p: "" for p in POLA}
 

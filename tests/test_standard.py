@@ -181,6 +181,21 @@ class StandardTest(unittest.TestCase):
         self.assertEqual(entry["odrzucone"], {"brak współrzędnych i adresu": 1})
         self.assertEqual(entry["uwagi_wartosci"]["geokodowanie GUGiK"], 1)
 
+    def test_generic_description_is_not_exact_location(self):
+        opis = ("Defibrylator AED (Automated External Defibrillator) to przenośne urządzenie medyczne, które zostało "
+                "zaprojektowane w celu ratowania życia osobom z nagłym zatrzymaniem akcji serca (NZK).")
+        raw = ("Lokalizacja;Opis lokalizacji;Szerokosc;Dlugosc\n"
+               f"Dworzec PKP;{opis};49,7812;22,7751\nUrząd Miejski;{opis};49,7806;22,7771\n"
+               f"Szkoła nr 1;{opis};49,7973;22,7582\n").encode("utf-8")
+        recs, entry, _ = run(raw)
+        self.assertEqual([r["exact_location"] for r in recs], ["", "", ""])
+        self.assertEqual(recs[0]["building_name"], "Dworzec PKP")
+        self.assertTrue(any("exact_location: pominięto" in u for u in entry.get("mapowanie", [])))
+        # pojedynczy bardzo długi tekst w komórce też nie jest lokalizacją
+        raw = f"Lokalizacja;Szerokosc;Dlugosc\n{opis * 3};49,7812;22,7751\nRatusz;49,7806;22,7771\n".encode("utf-8")
+        recs, _, _ = run(raw)
+        self.assertEqual([r["building_name"] for r in recs], ["", "Ratusz"])
+
     def test_coordinate_formats(self):
         self.assertEqual(standard.wspolrzedne("52,2297", "21,0122")[:2], (52.2297, 21.0122))
         self.assertEqual(standard.wspolrzedne("21.0122", "52.2297")[2], "zamienione lat/lon")

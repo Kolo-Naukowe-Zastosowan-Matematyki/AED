@@ -101,7 +101,7 @@ API serwisu:
 | `GET /aed-api/rejestr.json` | rejestr we wzorcowym zakresie dla portalu |
 | `GET /aed-api/export.xlsx`, `/aed-api/export.csv` | zagregowana tabela we wzorcowym zakresie (`common/aed_columns.json`); administrator dostaje też kolumny chronione |
 | `GET /aed-api/export.geojson`, `/aed-api/mapa_aed.html` | pliki do pobrania |
-| `GET /aed-api/kolumny`, `GET /aed-api/auth/rola`, `POST /aed-api/auth/login`, `/auth/logout` | tabela kolumn i rola (atrapa logowania administratora, hasło `AED_ADMIN_HASLO`, domyślnie `admin-aed`) |
+| `GET /aed-api/kolumny`, `GET /aed-api/auth/rola`, `GET /aed-api/auth/zaloguj`, `POST /aed-api/auth/logout` | tabela kolumn, rola i konto z portalu, przejście do logowania w portalu, wylogowanie |
 | `GET /aed-api/stats`, `GET /aed-api/sources` | liczniki oraz stan źródeł i raport pobierania |
 | `POST /aed-api/refresh` | ponowne pobranie z dane.gov.pl |
 
@@ -120,6 +120,23 @@ Backend portalu (`mcod`, Django) do uruchomienia potrzebuje m.in. PostgreSQL, El
 dało się uruchomić jedną komendą, API zbioru AED jest odtworzone w `portal/backend/aed_dataset.py` w formacie API
 portalu 1.4, a pozostałe dane portalu są czytane z produkcyjnego dane.gov.pl. W prawdziwym portalu zbiór AED
 dodaje dostawca w panelu, a zasoby wskazują pliki i strony serwisu AED.
+
+### Logowanie przez dane.gov.pl
+
+Serwis nie ma własnych haseł. „Zaloguj się przez dane.gov.pl” prowadzi do oryginalnego formularza „Zaloguj się”
+makiety portalu (wybierz „Zaloguj się e-mailem i hasłem”). Po zalogowaniu portal wraca do rejestru, a serwis
+sprawdza token portalu w `GET /api/auth/user` i bierze z konta rolę. Konto służb (`aed_rola: sluzby_aed`) i
+administrator portalu widzą kolumny chronione; pozostali widzą dane publiczne. „Wyloguj” kończy sesję w portalu.
+
+Konta demo (makieta portalu, `portal/backend/konta.py`; tylko na localhost):
+
+| E-mail | Hasło | Rola w rejestrze |
+| --- | --- | --- |
+| `sluzby@aed.demo` | `demo-aed` | służby AED: kolumny chronione |
+| `admin@aed.demo` | `demo-aed` | administrator portalu: kolumny chronione |
+| `obywatel@aed.demo` | `demo-aed` | zwykłe konto: dane publiczne |
+
+Na produkcji to samo działa z prawdziwym kontem dane.gov.pl po dodaniu pola roli w mcod (`mcod_wsad/README.md`).
 
 ## Ograniczenia prototypu
 

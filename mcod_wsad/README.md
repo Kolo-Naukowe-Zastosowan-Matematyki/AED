@@ -25,16 +25,21 @@ Serwis rejestru sprawdza token portalu przez `GET {API_URL}/auth/user`. Dziś ta
 ```python
 # mcod/users/serializers.py, class UserApiAttrs (ok. l. 274)
 system_role = fields.Str(dump_only=True)   # "admin" | "editor" | "representative" | "official" | "user"
+aed_rola = fields.Str(dump_only=True)      # "sluzby_aed" dla kont służb (PRM, PSP, dyspozytorzy), inaczej ""
 ```
-`User.system_role` już istnieje (`mcod/users/models.py:521`), więc to jest cała zmiana po stronie portalu.
+`User.system_role` już istnieje (`mcod/users/models.py:521`). `aed_rola` to nowe pole konta (np. nadawane w panelu
+administratora, wzorem flag ról w `User`). Serwis daje dostęp do kolumn chronionych przy `aed_rola == "sluzby_aed"`
+albo `system_role == "admin"`.
 
 ## 4. Konfiguracja serwisu na produkcji
 `config.json` prototypu:
 
 ```json
-"auth": {"tryb": "portal", "api_url": "https://api.dane.gov.pl"}
+"auth": {"api_url": "https://api.dane.gov.pl/1.4", "logowanie_url": "https://dane.gov.pl/pl/user/login?redirect=…"}
 ```
-W trybie `demo` (domyślnym) serwis ma atrapę logowania administratora (hasło w `AED_ADMIN_HASLO`, domyślnie `admin-aed`).
+Lokalnie `server.py` ustawia oba adresy na makietę portalu (konta demo w README prototypu). Serwis czyta token
+z ciasteczka frontendu portalu (`apiauthtoken`, na localhost `local_apiauthtoken`), więc na produkcji rejestr
+musi działać w domenie dane.gov.pl (np. `rejestr-aed.dane.gov.pl`), żeby dostać to ciasteczko.
 
 ## 5. Dalsze kroki (wg wzorca DGA, opis w WPIECIE_BACKEND.md, sekcja 4)
 `resources/aed_utils.py` i `resources/tasks/aed.py` (zbiorczy zasób z `MAIN_AED_COLUMNS`, bez kolumn chronionych), wpis beat w `celeryapp.py`,

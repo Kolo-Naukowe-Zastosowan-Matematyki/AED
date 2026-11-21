@@ -658,31 +658,46 @@
       }
 
       // Kolejność w karcie: 1) gdzie jest AED, 2) czy da się go użyć teraz, 3) informacje dodatkowe
-      function cardHeading(item) {
+      // Tytuł karty: „Miejscowość, dokładniejsza lokalizacja” (obiekt, ulica albo opis miejsca), żeby punkty
+      // z jednej miejscowości dało się od siebie odróżnić; gdy źródło nie podaje nic poza miastem – współrzędne.
+      function cardPlace(item) {
         const st = item.standard || {};
-        return item.nazwa_obiektu || st.building_name || st.street_address || st.city || item.adres || "Defibrylator AED";
+        const city = st.city || "";
+        const generic = (x) => /^(defibrylator|aed|defibrylator aed|aed defibrylator)$/i.test(String(x || "").trim());
+        const name = [item.nazwa_obiektu, st.building_name].find((x) => x && !generic(x)) || "";
+        const street = st.street_address || (item.adres && item.adres !== city ? item.adres : "");
+        const detail = name || item.opis_lokalizacji || st.exact_location || street || "";
+        const coords = item.szerokosc != null && item.dlugosc != null
+          ? `${Number(item.szerokosc).toFixed(5)}, ${Number(item.dlugosc).toFixed(5)}` : "";
+        const heading = [city, detail || coords].filter(Boolean).join(", ") || "Defibrylator AED";
+        // druga linia tylko z tym, czego nie ma w tytule (ulica, piętro); miejscowości nie powtarzamy
+        const rest = [street && street !== detail ? street : "", item.pietro ? `piętro ${item.pietro}` : ""]
+          .filter(Boolean).join(", ");
+        return { heading, rest, detailUsed: detail };
+      }
+      function cardHeading(item) {
+        return cardPlace(item).heading;
       }
       function resultCard(item) {
         const st = item.standard || {};
+        const place = cardPlace(item);
         const card = document.createElement("article");
         card.className = "result";
         const top = document.createElement("div");
         top.className = "result__top";
-        appendText(top, "h3", "", cardHeading(item));
+        appendText(top, "h3", "", place.heading);
         card.append(top);
 
-        // 1. Lokalizacja
-        const fullAddress = [st.street_address, [st.postal_code, st.city].filter(Boolean).join(" ")].filter(Boolean).join(", ")
-          || item.adres;
-        const address = [fullAddress, item.pietro ? `piętro ${item.pietro}` : ""].filter(Boolean).join(", ");
-        const addressLine = appendText(card, "p", "result__address", address || "Adres nie został podany");
+        // 1. Lokalizacja (bez powtarzania miejscowości z tytułu)
+        const addressLine = (place.rest || item.odleglosc_m != null) ? appendText(card, "p", "result__address", place.rest) : null;
         if (item.odleglosc_m != null) {
           const meters = item.odleglosc_m;
           const distance = meters < 1000 ? `${meters} m` : `${(meters / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
           const minutes = Math.max(1, Math.round(meters * 1.3 / 83));
-          appendText(addressLine, "span", "result__distance", ` · ${distance} od Ciebie (ok. ${minutes} min pieszo)`);
+          appendText(addressLine, "span", "result__distance", `${place.rest ? " · " : ""}${distance} od Ciebie (ok. ${minutes} min pieszo)`);
         }
-        const where = [item.opis_lokalizacji || st.exact_location,
+        const opis = item.opis_lokalizacji || st.exact_location;
+        const where = [opis !== place.detailUsed ? opis : "",
                        st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""]
           .filter(Boolean).join(" · ");
         if (where) appendText(card, "p", "result__where", where.charAt(0).toUpperCase() + where.slice(1));
@@ -995,7 +1010,7 @@
           const box = document.createElement("div");
           box.className = "rpopup";
           appendText(box, "h3", "", cardHeading(it));
-          const adr = [st.street_address, [st.postal_code, st.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || it.adres;
+          const adr = cardPlace(it).rest;
           if (adr) appendText(box, "p", "", adr);
           const where = [it.opis_lokalizacji || st.exact_location,
                          st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""].filter(Boolean).join(" · ");

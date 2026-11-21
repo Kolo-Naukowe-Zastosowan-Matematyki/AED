@@ -2,7 +2,8 @@
 
     python -m rozwiazanie.scraping.run            -> pobiera z dane.gov.pl i zapisuje data/cache/danegov.json
     python -m rozwiazanie.scraping.run --raport   -> dodatkowo wypisuje raport zasobów
-    python -m rozwiazanie.scraping.run --xlsx     -> zapisuje zagregowaną tabelę (wzorcowy zakres) do data/rejestr_aed.xlsx
+    python -m rozwiazanie.scraping.run --xlsx     -> zapisuje zagregowaną tabelę (złoty standard) do data/rejestr_aed.xlsx
+    python -m rozwiazanie.scraping.run --csv      -> to samo jako CSV z separatorem „;” (data/rejestr_aed.csv)
     python -m rozwiazanie.scraping.run --offline --xlsx  -> to samo z pamięci podręcznej, bez internetu
     python -m rozwiazanie.scraping.run --diagnoza -> pobiera i zapisuje do data/diagnoza.json nagłówki i pierwsze
                                                      wiersze każdego zasobu, z którego nie udało się wczytać AED

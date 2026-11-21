@@ -4,27 +4,28 @@ Przepływ:
   1. wyszukanie zbiorów (/datasets?q=...) – frazy z config.json,
      plus zbiory i zasoby wskazane wprost (dataset_ids / resource_ids),
   2. lista zasobów zbioru (/datasets/{id}/resources),
-  3. dla zasobu z danymi tabelarycznymi: /resources/{id}/data (stronicowanie, max 100/strona),
-     w przeciwnym razie pobranie pliku CSV/GeoJSON z download_url,
-  4. rozpoznanie kolumn ze współrzędnymi: najpierw role mapowe z data_schema (b/l/label,
-     tak jak ustawia je dostawca w panelu dane.gov.pl), potem heurystyka po nazwach kolumn.
+  3. odczyt: widok tabelaryczny /resources/{id}/data, a gdy go nie ma albo nic z niego nie wyszło – sam plik
+     (czytniki.py: CSV/XLSX/ODS/XLS/JSON/GeoJSON/XML/KML/ZIP, format rozpoznawany po zawartości),
+  4. standaryzacja do złotego standardu (standard.py + common/aed_columns.json): mapowanie kolumn po synonimach
+     i po wartościach, normalizacja wartości, geokodowanie adresów bez współrzędnych (geokod.py, GUGiK),
+  5. ten sam zestaw danych opublikowany w kilku formatach (np. CSV i XLSX) liczymy raz,
+  6. raport dla każdego zasobu: mapowanie kolumn, nierozpoznane kolumny, odrzucone wiersze z powodem.
 
 Każdy rekord zachowuje link do zasobu źródłowego i warunki licencji z metadanych zbioru.
 Tylko biblioteka standardowa Pythona.
 """
 from __future__ import annotations
 
-import csv
-import io
 import json
 import logging
 import re
-import unicodedata
 import urllib.parse
 import urllib.request
 from typing import Iterable
 
-from rozwiazanie.backend.schema import AED, in_poland, map_access, to_float
+from rozwiazanie.backend.schema import AED
+from rozwiazanie.scraping.czytniki import NieobslugiwanyPlik, czytaj
+from rozwiazanie.scraping.standard import braki, mapuj_kolumny, standaryzuj
 
 log = logging.getLogger("aed.danegov")
 
@@ -64,11 +65,6 @@ def _paged(url: str, max_pages: int = MAX_PAGES) -> Iterable[dict]:
 
 # ---------------------------------------------------------------- pomocnicze
 
-def _norm(s: str) -> str:
-    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower()
-    return re.sub(r"[^a-z0-9]+", "_", s).strip("_")
-
-
 def _attr(obj: dict, *keys, default=""):
     a = obj.get("attributes") or {}
     for k in keys:
@@ -86,81 +82,28 @@ def _text(v) -> str:
     return "" if v is None else str(v).strip()
 
 
-CANDIDATES = {
-    "lat": ["szerokosc", "szerokosc_geograficzna", "szer", "lat", "latitude", "wsp_n", "n", "y", "wspolrzedna_y"],
-    "lon": ["dlugosc", "dlugosc_geograficzna", "dl", "lon", "lng", "longitude", "wsp_e", "e", "x", "wspolrzedna_x"],
-    "name": ["nazwa_obiektu", "nazwa", "obiekt", "nazwa_miejsca", "miejsce", "lokalizacja", "label", "jednostka"],
-    "desc": ["opis_lokalizacji", "umiejscowienie", "opis", "lokalizacja_szczegolowa", "miejsce_zawieszenia"],
-    "addr": ["adres", "ulica", "adres_obiektu"],
-    "city": ["miejscowosc", "miasto", "gmina"],
-    "hours": ["godziny_dostepnosci", "godziny", "dostepnosc", "godziny_otwarcia", "opening_hours"],
-    "access": ["dostep", "rodzaj_dostepu", "access"],
-    "owner": ["dysponent", "wlasciciel", "instytucja", "operator", "podmiot"],
-    "verified": ["data_weryfikacji", "data_aktualizacji", "data_przegladu"],
-    "indoor": ["wewnatrz", "wewnatrz_budynku", "indoor"],
-    "level": ["pietro", "kondygnacja", "level"],
-}
+_DOSTEP_AED = {"24/7": "publiczny", "GODZINY_OTWARCIA": "w_godzinach", "TYLKO_PERSONEL": "ograniczony"}
 
 
-def _detect(columns: list[str], geo_roles: dict[str, str]) -> dict[str, str]:
-    """Zwraca mapowanie rola -> nazwa kolumny."""
-    found: dict[str, str] = {}
-    # 1) role mapowe nadane przez dostawcę w panelu dane.gov.pl
-    if "b" in geo_roles:
-        found["lat"] = geo_roles["b"]
-    if "l" in geo_roles:
-        found["lon"] = geo_roles["l"]
-    if "label" in geo_roles:
-        found["name"] = geo_roles["label"]
-    # 2) heurystyka po nazwach
-    normed = {_norm(c): c for c in columns}
-    for role, names in CANDIDATES.items():
-        if role in found:
-            continue
-        for n in names:
-            if n in normed:
-                found[role] = normed[n]
-                break
-        else:
-            for n in names:
-                if len(n) > 3:
-                    hit = next((orig for k, orig in normed.items() if k.startswith(n)), None)
-                    if hit:
-                        found[role] = hit
-                        break
-    return found
-
-
-def _row_to_aed(row: dict, cols: dict[str, str], *, rid: str, n: int, ctx: dict) -> AED | None:
-    lat, lon = to_float(row.get(cols.get("lat"))), to_float(row.get(cols.get("lon")))
-    if lat is None or lon is None:
-        return None
-    if not in_poland(lat, lon) and in_poland(lon, lat):
-        lat, lon = lon, lat  # zamienione kolumny X/Y
-    if not in_poland(lat, lon):
-        return None
-    g = lambda role: _text(row.get(cols[role])) if role in cols else ""
-    addr = g("addr")
-    if g("city") and g("city") not in addr:
-        addr = f"{addr}, {g('city')}" if addr else g("city")
-    indoor_raw = g("indoor").lower()
+def _std_to_aed(rec: dict, *, rid: str, n: int, ctx: dict) -> AED:
+    """Rekord w złotym standardzie -> rekord mapy/rejestru (AED). Pełny rekord standardu jest w extra["std"]."""
+    adres = ", ".join(x for x in (rec["street_address"], " ".join(y for y in (rec["postal_code"], rec["city"]) if y)) if x)
     return AED(
         id_aed=f"dgp-{rid}-{n}",
-        szerokosc=round(lat, 6),
-        dlugosc=round(lon, 6),
+        szerokosc=rec["latitude"],
+        dlugosc=rec["longitude"],
         zrodlo=NAME,
         zrodlo_url=ctx["resource_url"],
         licencja=ctx["license"],
-        nazwa_obiektu=g("name"),
-        opis_lokalizacji=g("desc"),
-        adres=addr,
-        wewnatrz=None if not indoor_raw else indoor_raw in ("tak", "yes", "true", "1", "wewnatrz", "wewnątrz"),
-        pietro=g("level"),
-        dostep=map_access(g("access")) if g("access") else ("publiczny" if g("hours") == "24/7" else "nieznany"),
-        godziny_dostepnosci=g("hours"),
-        dysponent=g("owner") or ctx["institution"],
-        data_weryfikacji=g("verified")[:10],
-        extra={"zbior": ctx["dataset_title"]},
+        nazwa_obiektu=rec["building_name"],
+        opis_lokalizacji=rec["exact_location"],
+        adres=adres,
+        wewnatrz=rec["is_indoor"],
+        dostep=_DOSTEP_AED.get(rec["availability_type"], "nieznany"),
+        godziny_dostepnosci=rec["opening_hours"] or ("24/7" if rec["availability_type"] == "24/7" else ""),
+        dysponent=rec["operator_name"],
+        data_weryfikacji=rec["record_updated_at"],
+        extra={"zbior": ctx["dataset_title"], "std": rec},
     )
 
 
@@ -189,30 +132,10 @@ def _rows_from_table_api(rid: str) -> tuple[list[dict], dict[str, str]]:
     return rows, geo_roles
 
 
-def _rows_from_file(url: str, fmt: str) -> list[dict]:
+def _rows_from_file(url: str, fmt: str) -> tuple[list[dict], list[str]]:
     raw = _get_bytes(url)
     _LAST_RAW["head"] = raw[:1500]
-    if fmt in ("geojson", "json"):
-        data = json.loads(raw.decode("utf-8-sig"))
-        rows = []
-        for f in data.get("features", []) if isinstance(data, dict) else []:
-            geom = f.get("geometry") or {}
-            if geom.get("type") == "Point":
-                props = dict(f.get("properties") or {})
-                props["lon"], props["lat"] = geom["coordinates"][:2]
-                rows.append(props)
-        return rows
-    text = None
-    for enc in ("utf-8-sig", "cp1250", "iso-8859-2"):
-        try:
-            text = raw.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    if text is None:
-        return []
-    dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
-    return list(csv.DictReader(io.StringIO(text), dialect=dialect))
+    return czytaj(raw, fmt)
 
 
 def _license_of(dataset: dict) -> str:
@@ -248,8 +171,65 @@ def find_datasets(cfg: dict) -> list[dict]:
     return list(found.values())
 
 
-def load(cfg: dict, progress=lambda msg: None) -> tuple[list[AED], list[dict]]:
-    """Zwraca (rekordy, raport_zasobów)."""
+def _miasto_z_instytucji(name: str) -> str:
+    """„Urząd Miasta Marki” / „Gmina Miejska Krosno” -> „Marki” / „Krosno” (podpowiedź dla geokodera i kolumny city)."""
+    m = re.search(r"(?:Miasta(?: i Gminy)?|Miejska|Gmina|Miasto|Gminy|m\.|st\.)\s+(?:st\.\s+)?([A-ZĄĆĘŁŃÓŚŹŻ][\wąćęłńóśźż-]+(?:\s+[A-ZĄĆĘŁŃÓŚŹŻ][\wąćęłńóśźż-]+)?)", name or "")
+    return m.group(1) if m else ""
+
+
+def _probka(rows: list[dict], geo_roles: dict, res: dict) -> dict:
+    return {
+        "naglowki": list(rows[0].keys()) if rows else [],
+        "wiersze": [{k: (v if isinstance(v, (str, int, float, bool, type(None), dict, list)) else str(v))
+                     for k, v in r.items()} for r in rows[:3]],
+        "role_mapowe": geo_roles,
+        "poczatek_pliku": _LAST_RAW.get("head", b"").decode("utf-8", "replace") if not rows else "",
+        "download_url": _attr(res, "download_url", "file_url", "link"),
+    }
+
+
+def standaryzuj_wiersze(rows: list[dict], geo_roles: dict, ctx: dict, entry: dict, geokoder=None,
+                        rid: str = "", start: int = 1) -> list[AED]:
+    """Wiersze jednego zasobu -> rekordy AED w złotym standardzie; wszystko, co się nie udało, trafia do `entry`."""
+    cols = list(dict.fromkeys(k for r in rows[:200] for k in r.keys()))
+    mapa = mapuj_kolumny(cols, rows, geo_roles)
+    entry["kolumny"] = mapa["pola"] | ({"latitude+longitude": mapa["para"]} if mapa["para"] else {})
+    if mapa["uwagi"]:
+        entry["mapowanie"] = mapa["uwagi"]
+    if mapa["nierozpoznane"]:
+        entry["nierozpoznane_kolumny"] = mapa["nierozpoznane"]
+    out: list[AED] = []
+    odrzucone: dict[str, int] = {}
+    przyklady: list[dict] = []
+    uwagi: dict[str, int] = {}
+    brakuje: dict[str, int] = {}
+    for n, row in enumerate(rows, start=start):
+        try:
+            rec, why, notes = standaryzuj(row, mapa, ctx, geokoder)
+        except Exception as exc:  # noqa: BLE001  jeden zły wiersz nie wywraca importu
+            rec, why, notes = None, f"błąd wiersza: {exc}", []
+        for x in notes:
+            uwagi[x] = uwagi.get(x, 0) + 1
+        if rec is None:
+            odrzucone[why] = odrzucone.get(why, 0) + 1
+            if len(przyklady) < 3:
+                przyklady.append({k: str(v)[:80] for k, v in list(row.items())[:12]})
+            continue
+        for b in braki(rec):
+            brakuje[b] = brakuje.get(b, 0) + 1
+        out.append(_std_to_aed(rec, rid=rid, n=n, ctx=ctx))
+    if odrzucone:
+        entry["odrzucone"] = odrzucone
+        entry["odrzucone_przyklady"] = przyklady
+    if uwagi:
+        entry["uwagi_wartosci"] = uwagi
+    if brakuje:
+        entry["braki_wymaganych"] = brakuje
+    return out
+
+
+def load(cfg: dict, progress=lambda msg: None, geokoder=None) -> tuple[list[AED], list[dict]]:
+    """Zwraca (rekordy, raport_zasobów). Każdy zasób przechodzi przez czytniki.czytaj + standard.standaryzuj."""
     records: list[AED] = []
     report: list[dict] = []
     datasets = find_datasets(cfg)
@@ -271,6 +251,7 @@ def load(cfg: dict, progress=lambda msg: None) -> tuple[list[AED], list[dict]]:
             report.append({"zasob": rid, "blad": str(exc)})
 
     seen = set()
+    seen_sets: dict[str, list[tuple[str, set]]] = {}
     for ds, res in jobs:
         rid = str(res["id"])
         if rid in seen:
@@ -278,50 +259,61 @@ def load(cfg: dict, progress=lambda msg: None) -> tuple[list[AED], list[dict]]:
         seen.add(rid)
         fmt = _text(_attr(res, "format")).lower()
         rel = res.get("relationships") or {}
+        institution = _text(((rel.get("institution") or {}).get("data") or {}).get("title", "")) \
+            or _text(_attr(ds, "institution_name", "organization_title"))
         ctx = {
             "resource_url": f"{PORTAL}/pl/dataset/{ds.get('id')}/resource/{rid}",
             "license": _license_of(ds),
-            "institution": _text(((rel.get("institution") or {}).get("data") or {}).get("title", ""))
-            or _text(_attr(ds, "institution_name", "organization_title")),
+            "institution": institution,
             "dataset_title": re.sub(r"<[^>]+>", "", _text(_attr(ds, "title"))),  # wyszukiwarka API dodaje <mark>
         }
+        sctx = {**ctx, "zasob_url": ctx["resource_url"], "instytucja": institution,
+                "miasto": _miasto_z_instytucji(institution) or _miasto_z_instytucji(ctx["dataset_title"]),
+                "zmodyfikowano": _text(_attr(res, "data_date", "modified", "file_modified"))}
         entry = {"zbior": ctx["dataset_title"], "zasob": _text(_attr(res, "title")), "url": ctx["resource_url"],
                  "format": fmt, "rekordy": 0}
         rows: list[dict] = []
+        geo_roles: dict[str, str] = {}
         _LAST_RAW.pop("head", None)
         try:
-            geo_roles: dict[str, str] = {}
+            url = _attr(res, "download_url", "file_url", "link")
+            recs: list[AED] = []
             if "tabular_data" in rel or "geo_data" in rel:
                 rows, geo_roles = _rows_from_table_api(rid)
                 entry["metoda"] = "API /data"
-            elif fmt in ("csv", "geojson", "json") and _attr(res, "download_url", "file_url", "link"):
-                rows = _rows_from_file(_attr(res, "download_url", "file_url", "link"), fmt)
-                entry["metoda"] = "plik"
+                recs = standaryzuj_wiersze(rows, geo_roles, sctx, entry, geokoder, rid)
+            if not recs and url:
+                # brak widoku tabelarycznego albo nic z niego nie wyszło: czytamy sam plik, format po zawartości
+                file_entry = {}
+                rows, notes = _rows_from_file(url, fmt)
+                geo_roles = {}
+                recs = standaryzuj_wiersze(rows, {}, sctx, file_entry, geokoder, rid)
+                if recs or "metoda" not in entry:
+                    entry.update(file_entry)
+                    entry["metoda"] = "plik: " + "; ".join(notes)
+            if not url and "metoda" not in entry:
+                entry["pominieto"] = "zasób bez pliku do pobrania"
+            sig = {(round(r.szerokosc, 4), round(r.dlugosc, 4)) for r in recs}
+            twin = next((t for t in seen_sets.get(str(ds.get("id")), []) if sig and len(sig & t[1]) >= 0.9 * len(sig)), None)
+            if twin:
+                entry["pominieto"] = f"ten sam zestaw danych co zasób {twin[0]} (inny format), liczony raz"
+                recs = []
             else:
-                entry["pominieto"] = "format nieobsługiwany w prototypie"
-                report.append(entry)
-                continue
-            cols = _detect(list(rows[0].keys()) if rows else [], geo_roles)
-            entry["kolumny"] = cols
-            if "lat" not in cols or "lon" not in cols:
-                entry["pominieto"] = "brak kolumn ze współrzędnymi"
-            for n, row in enumerate(rows, start=1):
-                aed = _row_to_aed(row, cols, rid=rid, n=n, ctx=ctx) if "lat" in cols and "lon" in cols else None
-                if aed:
-                    records.append(aed)
-                    entry["rekordy"] += 1
+                seen_sets.setdefault(str(ds.get("id")), []).append((rid, sig))
+            records += recs
+            entry["rekordy"] = len(recs)
+            if rows and not recs and "pominieto" not in entry:
+                entry["pominieto"] = "żaden wiersz nie dał się sprowadzić do standardu"
+            elif not rows and "pominieto" not in entry:
+                entry["pominieto"] = "brak wierszy danych w pliku"
+        except NieobslugiwanyPlik as exc:
+            entry["pominieto"] = str(exc)
         except Exception as exc:  # noqa: BLE001
-            entry["blad"] = str(exc)
-        if not entry["rekordy"] and ("pominieto" in entry or "blad" in entry):
-            # diagnoza: nagłówki i pierwsze wiersze (albo surowy początek pliku), żeby dopasować parser
-            entry["probka"] = {
-                "naglowki": list(rows[0].keys()) if rows else [],
-                "wiersze": [{k: (v if isinstance(v, (str, int, float, bool, type(None), dict, list)) else str(v))
-                             for k, v in r.items()} for r in rows[:3]],
-                "role_mapowe": geo_roles if "geo_roles" in locals() else {},
-                "poczatek_pliku": _LAST_RAW.get("head", b"").decode("utf-8", "replace") if not rows else "",
-                "download_url": _attr(res, "download_url", "file_url", "link"),
-            }
+            entry["blad"] = f"{type(exc).__name__}: {exc}"
+        if not entry["rekordy"] and ("pominieto" in entry or "blad" in entry) and "ten sam zestaw" not in entry.get("pominieto", ""):
+            entry["probka"] = _probka(rows, geo_roles, res)  # diagnoza: nagłówki, pierwsze wiersze, początek pliku
         report.append(entry)
         progress(f"{entry['zasob']}: {entry['rekordy']} rekordów")
+    if geokoder is not None:
+        geokoder.zapisz()
     return records, report

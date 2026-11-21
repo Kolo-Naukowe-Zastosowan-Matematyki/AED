@@ -86,7 +86,9 @@ class Store:
                 self.status["danegov"]["postep"] = msg
 
         try:
-            recs, report = source_danegov.load(src, progress=progress)
+            from rozwiazanie.scraping.geokod import Geokoder
+            geo = Geokoder(self.cache_dir / "geokod.json", online=src.get("geokodowanie", True))
+            recs, report = source_danegov.load(src, progress=progress, geokoder=geo)
             fetched = self._save_cache("danegov", recs, report)
             with self.lock:
                 self.by_source["danegov"] = recs

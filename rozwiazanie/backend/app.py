@@ -102,7 +102,8 @@ class SerwisHandler(BaseHandler):
             if p == "/kolumny":
                 return self._json({"rola": role, "kolumny": columns_for(role)})
             if p == "/search":
-                limit = min(max(int(q.get("limit", 25)), 1), 100)
+                # wszystko=1: pełny zestaw wyników dla widoków Tabela i Mapa na stronie rejestru
+                limit = min(max(int(q.get("limit", 25)), 1), 5000 if q.get("wszystko") == "1" else 100)
                 offset = max(int(q.get("offset", 0)), 0)
                 # „Nazwa obiektu lub numer AED” i filtry po kolumnach chronionych: tylko administrator (wymuszone tu)
                 res = s.search(q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", ""), q.get("dostep", ""),

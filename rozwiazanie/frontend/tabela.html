@@ -174,6 +174,7 @@
       .col-menu { width: min(330px, calc(100vw - 32px)); }
       .kv { grid-template-columns: 1fr; }
     }
+    .field[hidden], .kpi[hidden] { display: none !important; }
   </style>
 </head>
 <body>
@@ -236,11 +237,9 @@
             <label for="f-avail">Dostępność</label>
             <select id="f-avail">
               <option value="">Wszystkie</option>
-              <option value="PUBLICZNY">Publiczny</option>
+              <option value="24/7">Całodobowo (24/7)</option>
               <option value="GODZINY_OTWARCIA">W godzinach otwarcia</option>
               <option value="TYLKO_PERSONEL">Tylko personel</option>
-              <option value="PRYWATNY">Prywatny</option>
-              <option value="NIEZNANY">Brak informacji</option>
             </select>
           </div>
           <div class="field">
@@ -290,7 +289,7 @@
     <div class="wrap">
       <section class="kpis" aria-label="Podsumowanie przefiltrowanych danych">
         <div class="kpi"><span class="kpi__label">Wyświetlane AED</span><span class="kpi__val" id="kpi-total">0</span><span class="kpi__sub" id="kpi-total-sub">z 0 w zbiorze</span></div>
-        <div class="kpi"><span class="kpi__label">Dostęp publiczny</span><span class="kpi__val" id="kpi-pub">0</span><span class="kpi__sub" id="kpi-pub-sub">0% widoku</span></div>
+        <div class="kpi"><span class="kpi__label">Bez klucza i kodu</span><span class="kpi__val" id="kpi-pub">0</span><span class="kpi__sub" id="kpi-pub-sub">0% widoku</span></div>
         <div class="kpi"><span class="kpi__label">Dostępne całą dobę (24/7)</span><span class="kpi__val" id="kpi-247">0</span><span class="kpi__sub" id="kpi-247-sub">0% widoku</span></div>
         <div class="kpi"><span class="kpi__label">Możliwe duplikaty</span><span class="kpi__val" id="kpi-dup">0</span><span class="kpi__sub">ten sam numer seryjny lub do 15 m</span></div>
       </section>
@@ -341,13 +340,13 @@
     // 8 domyślnych kolumn (układ z widoku Pauliny); pozostałe przychodzą z tabeli wzorca /aed-api/tabela
     const DEFAULT_COLS = [
       { key: "_id", label: "Identyfikator" },
-      { key: "miejscowosc", label: "Miejscowość i adres" },
-      { key: "nazwa_budynku", label: "Obiekt i dokładne miejsce" },
-      { key: "typ_dostepnosci", label: "Dostępność" },
-      { key: "czy_zamkniety", label: "Klucz / kod" },
-      { key: "status_operacyjny", label: "Status sprawności" },
-      { key: "mozliwy_duplikat", label: "Możliwy duplikat" },
-      { key: "nazwa_operatora", label: "Dysponent" },
+      { key: "city", label: "Miejscowość i adres" },
+      { key: "building_name", label: "Obiekt i dokładne miejsce" },
+      { key: "availability_type", label: "Dostępność" },
+      { key: "is_locked", label: "Klucz / kod" },
+      { key: "operational_status", label: "Status sprawności" },
+      { key: "possible_duplicate", label: "Możliwy duplikat" },
+      { key: "operator_name", label: "Dysponent" },
     ];
     let COLUMNS = [];
     let schema = [];   // kolumny tabeli wzorca widoczne dla roli (z serwera)
@@ -356,18 +355,20 @@
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    const yes = (v) => v === true || v === "True" || v === "true" || v === "TAK";
-    const no = (v) => v === false || v === "False" || v === "false" || v === "NIE";
+    const yes = (v) => v === true || v === "TRUE" || v === "True" || v === "true" || v === "TAK";
+    const no = (v) => v === false || v === "FALSE" || v === "False" || v === "false" || v === "NIE";
     const state = { all: [], filtered: [], q: "", region: "", avail: "", status: "", dup: "",
                     onlyUnlocked: false, onlyOutdoor: false, only247: false,
-                    sortKey: "miejscowosc", sortDir: "asc", page: 1, pageSize: 10 };
+                    sortKey: "city", sortDir: "asc", page: 1, pageSize: 10 };
 
     function buildColumns() {
       const label = Object.fromEntries(schema.map((c) => [c.pole, c.nazwa]));
-      const inDefault = new Set(DEFAULT_COLS.map((c) => c.key).concat(["wojewodztwo", "adres_uliczny", "kod_pocztowy",
-        "dokladna_lokalizacja", "wewnatrz_budynku", "godziny_dostepnosci"]));
-      COLUMNS = DEFAULT_COLS.map((c) => ({ ...c, group: "Podstawowe (domyślne)", visible: true }))
-        .concat(schema.filter((c) => !inDefault.has(c.pole) || ["wojewodztwo", "adres_uliczny", "kod_pocztowy", "godziny_dostepnosci", "wewnatrz_budynku"].includes(c.pole))
+      const inDefault = new Set(DEFAULT_COLS.map((c) => c.key).concat(["region", "street_address", "postal_code",
+        "exact_location", "is_indoor", "opening_hours"]));
+      // kolumny chronione (np. possible_duplicate) tylko gdy serwer je przysłał, czyli dla administratora
+      COLUMNS = DEFAULT_COLS.filter((c) => c.key === "_id" || schema.some((x) => x.pole === c.key))
+        .map((c) => ({ ...c, group: "Podstawowe (domyślne)", visible: true }))
+        .concat(schema.filter((c) => !inDefault.has(c.pole) || ["region", "street_address", "postal_code", "opening_hours", "is_indoor"].includes(c.pole))
           .filter((c) => !DEFAULT_COLS.some((d) => d.key === c.pole))
           .map((c) => ({ key: c.pole, label: label[c.pole] || c.pole, visible: false,
                          group: c.chroniona ? "Chronione (tylko administrator)" : "Dodatkowe ze wzorcowego zakresu" })));
@@ -375,8 +376,8 @@
 
     const badge = (cls, text) => `<span class="badge badge--${cls}">${esc(text)}</span>`;
     function badgeAvail(v) {
-      return ({ PUBLICZNY: badge("ok", "Publiczny"), GODZINY_OTWARCIA: badge("info", "Godziny otwarcia"),
-                TYLKO_PERSONEL: badge("warn", "Tylko personel"), PRYWATNY: badge("warn", "Prywatny") })[v] || badge("muted", "Brak informacji");
+      return ({ "24/7": badge("ok", "24/7"), GODZINY_OTWARCIA: badge("info", "Godziny otwarcia"),
+                TYLKO_PERSONEL: badge("warn", "Tylko personel") })[v] || badge("muted", "Brak informacji");
     }
     function badgeLocked(v) { return yes(v) ? badge("warn", "🔒 Tak") : no(v) ? badge("ok", "Nie") : badge("muted", "Brak informacji"); }
     function badgeStatus(v) {
@@ -387,24 +388,24 @@
 
     function renderCell(row, key) {
       if (key === "_id") return `<span class="cell-id">${esc(row._id)}</span>`;
-      if (key === "miejscowosc") {
-        const sub = [row.wojewodztwo, row.adres_uliczny, row.kod_pocztowy].filter(Boolean).map(esc).join(" · ");
-        return `<div class="cell-main">${esc(row.miejscowosc || "—")}</div>${sub ? `<div class="cell-sub">${sub}</div>` : ""}`;
+      if (key === "city") {
+        const sub = [row.region, row.street_address, row.postal_code].filter(Boolean).map(esc).join(" · ");
+        return `<div class="cell-main">${esc(row.city || "—")}</div>${sub ? `<div class="cell-sub">${sub}</div>` : ""}`;
       }
-      if (key === "nazwa_budynku") {
-        const ind = indoor(row.wewnatrz_budynku);
-        return `<div class="cell-loc"><div class="cell-main">${esc(row.nazwa_budynku || row.nazwa_operatora || "—")}</div>
-                <div class="cell-sub">${esc(row.dokladna_lokalizacja || "")}${ind ? ` · <strong>${ind}</strong>` : ""}</div></div>`;
+      if (key === "building_name") {
+        const ind = indoor(row.is_indoor);
+        return `<div class="cell-loc"><div class="cell-main">${esc(row.building_name || row.operator_name || "—")}</div>
+                <div class="cell-sub">${esc(row.exact_location || "")}${ind ? ` · <strong>${ind}</strong>` : ""}</div></div>`;
       }
-      if (key === "typ_dostepnosci") {
-        return badgeAvail(row.typ_dostepnosci) + (row.godziny_dostepnosci ? `<div class="cell-sub">${esc(row.godziny_dostepnosci)}</div>` : "");
+      if (key === "availability_type") {
+        return badgeAvail(row.availability_type) + (row.opening_hours ? `<div class="cell-sub">${esc(row.opening_hours)}</div>` : "");
       }
-      if (key === "czy_zamkniety") return badgeLocked(row.czy_zamkniety);
-      if (key === "status_operacyjny") return badgeStatus(row.status_operacyjny);
-      if (key === "mozliwy_duplikat") return badgeDup(row.mozliwy_duplikat);
-      if (key === "wewnatrz_budynku") return esc(indoor(row.wewnatrz_budynku) || "—");
-      if (key === "zrodlo_danych" && /^https?:\/\//.test(row.zrodlo_danych || "")) {
-        return `<a href="${esc(row.zrodlo_danych)}" target="_blank" rel="noopener noreferrer">zasób dane.gov.pl</a>`;
+      if (key === "is_locked") return badgeLocked(row.is_locked);
+      if (key === "operational_status") return badgeStatus(row.operational_status);
+      if (key === "possible_duplicate") return badgeDup(row.possible_duplicate);
+      if (key === "is_indoor") return esc(indoor(row.is_indoor) || "—");
+      if (key === "data_source" && /^https?:\/\//.test(row.data_source || "")) {
+        return `<a href="${esc(row.data_source)}" target="_blank" rel="noopener noreferrer">zasób dane.gov.pl</a>`;
       }
       const v = row[key];
       return v === null || v === undefined || v === "" ? "—" : esc(v);
@@ -412,7 +413,7 @@
 
     function populateRegionFilter() {
       const sel = $("f-region");
-      const regions = [...new Set(state.all.map((r) => r.wojewodztwo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pl"));
+      const regions = [...new Set(state.all.map((r) => r.region).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pl"));
       sel.innerHTML = `<option value="">Wszystkie (${regions.length})</option>` + regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
     }
 
@@ -432,17 +433,17 @@
     function applyFilters() {
       const q = state.q.trim().toLocaleLowerCase("pl");
       state.filtered = state.all.filter((r) => {
-        if (state.region && r.wojewodztwo !== state.region) return false;
-        if (state.avail && r.typ_dostepnosci !== state.avail) return false;
-        if (state.status && r.status_operacyjny !== state.status) return false;
-        if (state.dup === "tak" && !yes(r.mozliwy_duplikat)) return false;
-        if (state.dup === "nie" && yes(r.mozliwy_duplikat)) return false;
-        if (state.onlyUnlocked && !no(r.czy_zamkniety)) return false;
-        if (state.onlyOutdoor && !no(r.wewnatrz_budynku)) return false;
-        if (state.only247 && r.godziny_dostepnosci !== "24/7") return false;
+        if (state.region && r.region !== state.region) return false;
+        if (state.avail && r.availability_type !== state.avail) return false;
+        if (state.status && r.operational_status !== state.status) return false;
+        if (state.dup === "tak" && !yes(r.possible_duplicate)) return false;
+        if (state.dup === "nie" && yes(r.possible_duplicate)) return false;
+        if (state.onlyUnlocked && !no(r.is_locked)) return false;
+        if (state.onlyOutdoor && !no(r.is_indoor)) return false;
+        if (state.only247 && r.availability_type !== "24/7") return false;
         if (q) {
-          const hay = [r._id, r.wojewodztwo, r.miejscowosc, r.adres_uliczny, r.nazwa_budynku, r.dokladna_lokalizacja,
-                       r.nazwa_operatora, r.kod_pocztowy].join(" ").toLocaleLowerCase("pl");
+          const hay = [r._id, r.region, r.city, r.street_address, r.building_name, r.exact_location,
+                       r.operator_name, r.postal_code].join(" ").toLocaleLowerCase("pl");
           if (!hay.includes(q)) return false;
         }
         return true;
@@ -460,14 +461,14 @@
 
     function updateKpis() {
       const rows = state.filtered, n = rows.length;
-      const pub = rows.filter((r) => r.typ_dostepnosci === "PUBLICZNY").length;
-      const c247 = rows.filter((r) => r.godziny_dostepnosci === "24/7").length;
+      const pub = rows.filter((r) => no(r.is_locked)).length;
+      const c247 = rows.filter((r) => r.availability_type === "24/7").length;
       const pct = (x) => (n ? `${Math.round((x / n) * 100)}% widoku` : "0% widoku");
       $("kpi-total").textContent = n;
       $("kpi-total-sub").textContent = `z ${state.all.length} w zbiorze`;
       $("kpi-pub").textContent = pub; $("kpi-pub-sub").textContent = pct(pub);
       $("kpi-247").textContent = c247; $("kpi-247-sub").textContent = pct(c247);
-      $("kpi-dup").textContent = rows.filter((r) => yes(r.mozliwy_duplikat)).length;
+      $("kpi-dup").textContent = rows.filter((r) => yes(r.possible_duplicate)).length;
     }
 
     function renderTable() {
@@ -511,18 +512,18 @@
 
     function openModal(row) {
       if (!row) return;
-      $("modal-title").textContent = row.nazwa_budynku || row.nazwa_operatora || row._id;
-      $("modal-sub").innerHTML = `ID: <code>${esc(row._id)}</code> · ${esc([row.adres_uliczny, row.kod_pocztowy, row.miejscowosc, row.wojewodztwo].filter(Boolean).join(", "))}`;
+      $("modal-title").textContent = row.building_name || row.operator_name || row._id;
+      $("modal-sub").innerHTML = `ID: <code>${esc(row._id)}</code> · ${esc([row.street_address, row.postal_code, row.city, row.region].filter(Boolean).join(", "))}`;
       const sections = [
-        ["Lokalizacja (WGS84)", [["Województwo", val(row.wojewodztwo)], ["Miejscowość", val(row.miejscowosc)],
-          ["Kod pocztowy", val(row.kod_pocztowy)], ["Adres", val(row.adres_uliczny)], ["Wewnątrz budynku", val(indoor(row.wewnatrz_budynku))],
-          ["Dokładne miejsce", `<strong>${val(row.dokladna_lokalizacja)}</strong>`],
-          ["GPS", `<code>${esc(row.szerokosc_geograficzna)}, ${esc(row.dlugosc_geograficzna)}</code>`]]],
-        ["Dostępność i zabezpieczenia", [["Typ dostępności", badgeAvail(row.typ_dostepnosci)],
-          ["Godziny", `<code>${val(row.godziny_dostepnosci)}</code>`], ["Szafka zamknięta", badgeLocked(row.czy_zamkniety)]]],
-        ["Stan i dysponent", [["Status", badgeStatus(row.status_operacyjny)], ["Dysponent", `<strong>${val(row.nazwa_operatora)}</strong>`],
-          ["Aktualizacja", val(row.data_aktualizacji_rekordu)], ["Możliwy duplikat", badgeDup(row.mozliwy_duplikat)],
-          ["Źródło", renderCell(row, "zrodlo_danych")]]],
+        ["Lokalizacja (WGS84)", [["Województwo", val(row.region)], ["Miejscowość", val(row.city)],
+          ["Kod pocztowy", val(row.postal_code)], ["Adres", val(row.street_address)], ["Wewnątrz budynku", val(indoor(row.is_indoor))],
+          ["Dokładne miejsce", `<strong>${val(row.exact_location)}</strong>`],
+          ["GPS", `<code>${esc(row.latitude)}, ${esc(row.longitude)}</code>`]]],
+        ["Dostępność i zabezpieczenia", [["Typ dostępności", badgeAvail(row.availability_type)],
+          ["Godziny", `<code>${val(row.opening_hours)}</code>`], ["Szafka zamknięta", badgeLocked(row.is_locked)]]],
+        ["Stan i dysponent", [["Status", badgeStatus(row.operational_status)], ["Dysponent", `<strong>${val(row.operator_name)}</strong>`],
+          ["Aktualizacja", val(row.record_updated_at)], ["Możliwy duplikat", badgeDup(row.possible_duplicate)],
+          ["Źródło", renderCell(row, "data_source")]]],
       ];
       let html = sections.map(([t, r]) => `<div class="modal__sec"><h3>${esc(t)}</h3>${kv(r)}</div>`).join("");
       const prot = schema.filter((c) => c.chroniona);
@@ -535,7 +536,7 @@
         }))}</div>`;
       }
       $("modal-body").innerHTML = html;
-      const lat = row.szerokosc_geograficzna, lon = row.dlugosc_geograficzna;
+      const lat = row.latitude, lon = row.longitude;
       $("modal-actions").innerHTML = (lat && lon ? `<a class="btn btn--outline" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=18/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>
         <a class="btn btn--primary" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat + "," + lon)}" target="_blank" rel="noopener noreferrer">Pokaż na mapie</a>` : "") +
         '<button type="button" class="btn btn--outline" id="modal-close-2">Zamknij</button>';
@@ -636,6 +637,11 @@
         rt.textContent = role === "admin" ? `Administrator: ${schema.length} kolumn, w tym chronione` : `Widok publiczny: ${schema.length} kolumn`;
         if (role === "admin") rt.classList.add("meta-tag--admin");
         buildColumns();
+        // filtry tylko po kolumnach widocznych dla roli
+        const canDup = schema.some((c) => c.pole === "possible_duplicate");
+        $("f-dup").closest(".field").hidden = !canDup;
+        $("kpi-dup").closest(".kpi").hidden = !canDup;
+        if (!canDup) { state.dup = ""; $("f-dup").value = ""; }
         buildColumnMenu();
         populateRegionFilter();
         applyFilters();

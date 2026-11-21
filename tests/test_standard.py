@@ -188,8 +188,31 @@ class OdwrotneTest(unittest.TestCase):
             self.assertIsNone(geo.odwrotne(52.326697, 21.107557))
             self.assertFalse(geo.online)
             self.assertEqual(geo.blokada, "blocked for abuse")
-            self.assertEqual(geo.cache, {})          # przy następnym uruchomieniu zapytamy ponownie
+            self.assertEqual([k for k in geo.cache if not k.startswith("_")], [])  # brak adresu nie jest zapamiętany
             self.assertEqual(op.call_count, 1)       # po blokadzie nie pytamy dalej
+            geo.zapisz()
+            again = geokod.Geokoder(Path(tmp) / "g.json")   # kolejne uruchomienie: przerwa zapisana w pliku
+            self.assertFalse(again.online)
+            self.assertIn("wstrzymane do", again.blokada)
+            self.assertIsNone(again.odwrotne(52.32396, 21.098185))
+            self.assertEqual(op.call_count, 1)
+
+    def test_query_limit_per_run(self):
+        import tempfile
+        from unittest import mock
+        from rozwiazanie.scraping import geokod
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(geokod, "PAUZA_S", 0), \
+                mock.patch.object(geokod.urllib.request, "urlopen") as op:
+            op.return_value.__enter__ = lambda self: self
+            op.return_value.__exit__ = lambda self, *a: None
+            op.return_value.read = lambda: b'{"results": null}'
+            geo = geokod.Geokoder(Path(tmp) / "g.json", limit=2)
+            geo.odwrotne(52.326697, 21.107557)
+            self.assertEqual(op.call_count, 2)
+            self.assertTrue(geo.limit_osiagniety)
+            self.assertNotIn("r3:52.32670,21.10756", geo.cache)  # nie wszystkie warianty odpowiedziały
+            self.assertIsNone(geo.adres("Fabryczna 2, Marki"))
+            self.assertEqual(op.call_count, 2)
 
     def test_coordinates_only_get_street_from_reverse(self):
         class Rev(FakeGeo):

@@ -35,6 +35,7 @@ PORTAL = "https://dane.gov.pl"
 HEADERS = {"Accept": "application/vnd.api+json, application/json", "User-Agent": "aed-prototyp/0.1"}
 MAX_PAGES = 60  # 60 x 100 = 6000 wierszy na zasób – wystarczy na prototyp
 KEYWORDS = ("defibryl", "aed")
+_LAST_RAW: dict[str, bytes] = {}  # początek ostatnio pobranego pliku (do diagnozy pominiętych zasobów)
 
 
 # ---------------------------------------------------------------- HTTP
@@ -190,6 +191,7 @@ def _rows_from_table_api(rid: str) -> tuple[list[dict], dict[str, str]]:
 
 def _rows_from_file(url: str, fmt: str) -> list[dict]:
     raw = _get_bytes(url)
+    _LAST_RAW["head"] = raw[:1500]
     if fmt in ("geojson", "json"):
         data = json.loads(raw.decode("utf-8-sig"))
         rows = []
@@ -285,6 +287,8 @@ def load(cfg: dict, progress=lambda msg: None) -> tuple[list[AED], list[dict]]:
         }
         entry = {"zbior": ctx["dataset_title"], "zasob": _text(_attr(res, "title")), "url": ctx["resource_url"],
                  "format": fmt, "rekordy": 0}
+        rows: list[dict] = []
+        _LAST_RAW.pop("head", None)
         try:
             geo_roles: dict[str, str] = {}
             if "tabular_data" in rel or "geo_data" in rel:
@@ -308,6 +312,16 @@ def load(cfg: dict, progress=lambda msg: None) -> tuple[list[AED], list[dict]]:
                     entry["rekordy"] += 1
         except Exception as exc:  # noqa: BLE001
             entry["blad"] = str(exc)
+        if not entry["rekordy"] and ("pominieto" in entry or "blad" in entry):
+            # diagnoza: nagłówki i pierwsze wiersze (albo surowy początek pliku), żeby dopasować parser
+            entry["probka"] = {
+                "naglowki": list(rows[0].keys()) if rows else [],
+                "wiersze": [{k: (v if isinstance(v, (str, int, float, bool, type(None), dict, list)) else str(v))
+                             for k, v in r.items()} for r in rows[:3]],
+                "role_mapowe": geo_roles if "geo_roles" in locals() else {},
+                "poczatek_pliku": _LAST_RAW.get("head", b"").decode("utf-8", "replace") if not rows else "",
+                "download_url": _attr(res, "download_url", "file_url", "link"),
+            }
         report.append(entry)
         progress(f"{entry['zasob']}: {entry['rekordy']} rekordów")
     return records, report

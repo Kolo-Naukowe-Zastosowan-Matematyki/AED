@@ -99,7 +99,10 @@ class Store:
 
         try:
             from rozwiazanie.scraping.geokod import Geokoder
-            geo = Geokoder(self.cache_dir / "geokod.json", online=src.get("geokodowanie", True))
+            # zwykły start korzysta tylko z zapisanych odpowiedzi (data/cache/geokod.json w repozytorium);
+            # zapytania do GUGiK wysyła osobny krok: python -m rozwiazanie.scraping.run --geokoduj
+            geo = Geokoder(self.cache_dir / "geokod.json", online=src.get("geokodowanie") is True,
+                           limit=int(src.get("geokodowanie_limit", 300)), user_agent=src.get("user_agent", ""))
             recs, report = source_danegov.load(src, progress=progress, geokoder=geo)
             fetched = self._save_cache("danegov", recs, report)
             with self.lock:
@@ -108,6 +111,9 @@ class Store:
                                           "raport": report}
                 if geo.blokada:  # widoczne w /aed-api/sources i w run.py --raport
                     self.status["danegov"]["geokodowanie"] = f"GUGiK odmówił: {geo.blokada}"
+                elif geo.online or geo.pytania:
+                    self.status["danegov"]["geokodowanie"] = (
+                        f"GUGiK: {geo.pytania} zapytań" + (", limit osiągnięty, uruchom ponownie" if geo.limit_osiagniety else ""))
                 self._rebuild()
         except Exception as exc:  # noqa: BLE001
             log.warning("dane.gov.pl: błąd pobierania: %s", exc)

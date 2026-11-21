@@ -214,6 +214,23 @@ class OdwrotneTest(unittest.TestCase):
             self.assertIsNone(geo.adres("Fabryczna 2, Marki"))
             self.assertEqual(op.call_count, 2)
 
+    def test_store_start_does_not_query_gugik(self):
+        import tempfile
+        from unittest import mock
+        from rozwiazanie.backend.store import Store
+        from rozwiazanie.scraping import danegov, geokod
+        seen = {}
+
+        def fake_load(src, progress=None, geokoder=None):
+            seen["online"] = geokoder.online
+            return [], []
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(danegov, "load", fake_load), \
+                mock.patch.object(geokod.Geokoder, "_get", side_effect=AssertionError("zapytanie do GUGiK")):
+            Store(Path(tmp), {"danegov": {}}).refresh_danegov()
+            self.assertFalse(seen["online"])
+            Store(Path(tmp), {"danegov": {"geokodowanie": True}}).refresh_danegov()
+            self.assertTrue(seen["online"])
+
     def test_coordinates_only_get_street_from_reverse(self):
         class Rev(FakeGeo):
             def odwrotne(self, lat, lon):

@@ -1,7 +1,8 @@
 """Geokodowanie adresów bez współrzędnych: Usługa Geokodowania GUGiK (UUG, dane PRG, bezpłatna, bez klucza).
 
   adres("ul. Piłsudskiego 95, 05-270 Marki") -> {"lat", "lon", "region", "city"}
-  odwrotne(52.32, 21.10)                      -> {"region", "city"}   (województwo z kodu TERYT)
+  odwrotne(52.32, 21.10)                      -> {"region", "city", "street_address", "postal_code"}
+                                                 (najbliższy punkt adresowy; województwo z kodu TERYT)
 
 Wyniki są zapisywane w data/cache/geokod.json, więc każdy adres pytamy tylko raz, a tryb --offline
 korzysta z zapisanych odpowiedzi. Po pierwszym błędzie sieci geokoder wyłącza się do końca przebiegu
@@ -18,7 +19,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from rozwiazanie.scraping.standard import TERYT_WOJ, liczba, w_polsce
+from rozwiazanie.scraping.standard import TERYT_WOJ, do_puwg1992, liczba, w_polsce
 
 log = logging.getLogger("aed.geokod")
 UUG = "https://services.gugik.gov.pl/uug/"
@@ -47,6 +48,13 @@ def _z_wyniku(r: dict) -> dict:
         out["region"] = TERYT_WOJ.get(teryt[:2], "")
     if r.get("city"):
         out["city"] = str(r["city"])
+    street = str(r.get("street") or "").strip()
+    number = str(r.get("number") or "").strip()
+    if number:
+        out["street_address"] = f"{street} {number}".strip() if street else f"{r.get('city') or ''} {number}".strip()
+    code = str(r.get("code") or r.get("postcode") or "").strip()
+    if code:
+        out["postal_code"] = code
     return out
 
 
@@ -56,6 +64,7 @@ class Geokoder:
         self.online = online
         self.lock = threading.Lock()
         self.pytania = 0
+        self.wariant = 0  # wariant zapytania odwrotnego, który ostatnio zadziałał
         try:
             self.cache: dict = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
         except (OSError, ValueError):
@@ -99,8 +108,33 @@ class Geokoder:
         return out if out and "lat" in out else None
 
     def odwrotne(self, lat: float, lon: float) -> dict | None:
-        key = f"r:{lat:.4f},{lon:.4f}"
-        return self._zapytaj(key, {"request": "GetAddressReverse", "location": f"POINT({lon} {lat})", "srid": "4326"})
+        """Najbliższy punkt adresowy. Kolejność osi w POINT bywa różnie rozumiana (EPSG:4326 lat/lon albo lon/lat,
+        EPSG:2180 x/y), więc pytamy w kolejnych wariantach; zły wariant wypada poza Polskę i nie daje wyniku.
+        Wariant, który zadziałał, zapamiętujemy, żeby kolejne punkty pytać jednym zapytaniem."""
+        key = f"r2:{lat:.5f},{lon:.5f}"
+        with self.lock:
+            if key in self.cache:
+                return self.cache[key] or None
+        east, north = do_puwg1992(lat, lon)
+        warianty = [{"location": f"POINT({lon} {lat})", "srid": "4326"},
+                    {"location": f"POINT({lat} {lon})", "srid": "4326"},
+                    {"location": f"POINT({east:.1f} {north:.1f})", "srid": "2180"},
+                    {"location": f"POINT({north:.1f} {east:.1f})", "srid": "2180"}]
+        kolejnosc = [self.wariant] + [i for i in range(len(warianty)) if i != self.wariant]
+        for i in kolejnosc:
+            if not self.online:
+                return None
+            body = self._get({"request": "GetAddressReverse", **warianty[i]})
+            r = _pierwszy_wynik(body) if body is not None else None
+            out = _z_wyniku(r) if r else {}
+            if out.get("region") or out.get("street_address"):
+                self.wariant = i
+                with self.lock:
+                    self.cache[key] = out
+                return out
+        with self.lock:
+            self.cache[key] = {}
+        return None
 
     def zapisz(self):
         with self.lock:

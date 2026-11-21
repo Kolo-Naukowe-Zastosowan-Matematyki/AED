@@ -130,6 +130,35 @@ class CzytnikiTest(unittest.TestCase):
         self.assertEqual(recs[0]["region"], "mazowieckie")  # z odwrotnego geokodowania (atrapa)
 
 
+class OdwrotneTest(unittest.TestCase):
+    def test_reverse_tries_axis_variants_and_remembers(self):
+        import tempfile
+        from rozwiazanie.scraping.geokod import Geokoder
+        hit = {"results": {"1": {"city": "Marki", "street": "Józefa Piłsudskiego", "number": "95", "code": "05-270",
+                                 "teryt": "1434041"}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            geo = Geokoder(Path(tmp) / "g.json")
+            asked = []
+
+            def fake_get(params):
+                asked.append(params["location"])
+                return hit if params["srid"] == "2180" and params["location"].startswith("POINT(6") else {"results": None}
+            geo._get = fake_get
+            out = geo.odwrotne(52.326697, 21.107557)
+            self.assertEqual(out, {"region": "mazowieckie", "city": "Marki", "street_address": "Józefa Piłsudskiego 95",
+                                   "postal_code": "05-270"})
+            self.assertEqual(len(asked), 3)            # 4326 lon/lat, 4326 lat/lon, 2180 x/y
+            geo.odwrotne(52.32396, 21.098185)
+            self.assertEqual(len(asked), 4)            # kolejny punkt: od razu wariant, który zadziałał
+            self.assertEqual(geo.odwrotne(52.326697, 21.107557)["city"], "Marki")
+            self.assertEqual(len(asked), 4)            # pamięć podręczna
+
+    def test_puwg1992_roundtrip(self):
+        e, n = standard.do_puwg1992(52.326697, 21.107557)
+        lat, lon, uklad = standard.wspolrzedne(str(n), str(e))
+        self.assertEqual((round(lat, 6), round(lon, 6), uklad), (52.326697, 21.107557, "PUWG 1992"))
+
+
 class StandardTest(unittest.TestCase):
     def test_marki_addresses_only_geocoded(self):
         geo = FakeGeo()

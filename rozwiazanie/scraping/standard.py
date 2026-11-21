@@ -141,6 +141,29 @@ def _tm_odwrotne(x: float, y: float, lon0: float, k0: float, fe: float, fn: floa
     return math.degrees(lat), lon0 + math.degrees(lon)
 
 
+def _tm_wprost(lat: float, lon: float, lon0: float, k0: float, fe: float, fn: float) -> tuple[float, float]:
+    """Odwzorowanie Gaussa-Krügera na elipsoidzie GRS80: (lat, lon) w stopniach -> (easting, northing) w metrach."""
+    a, f = 6378137.0, 1 / 298.257222101
+    e2 = f * (2 - f)
+    ep2 = e2 / (1 - e2)
+    phi, dl = math.radians(lat), math.radians(lon - lon0)
+    n = a / math.sqrt(1 - e2 * math.sin(phi) ** 2)
+    t, c = math.tan(phi) ** 2, ep2 * math.cos(phi) ** 2
+    aa = dl * math.cos(phi)
+    m = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * phi
+             - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * math.sin(2 * phi)
+             + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * math.sin(4 * phi) - (35 * e2 ** 3 / 3072) * math.sin(6 * phi))
+    x = fe + k0 * n * (aa + (1 - t + c) * aa ** 3 / 6 + (5 - 18 * t + t ** 2 + 72 * c - 58 * ep2) * aa ** 5 / 120)
+    y = fn + k0 * (m + n * math.tan(phi) * (aa ** 2 / 2 + (5 - t + 9 * c + 4 * c ** 2) * aa ** 4 / 24
+                                            + (61 - 58 * t + t ** 2 + 600 * c - 330 * ep2) * aa ** 6 / 720))
+    return x, y
+
+
+def do_puwg1992(lat: float, lon: float) -> tuple[float, float]:
+    """WGS84 -> PUWG 1992 (EPSG:2180): (easting, northing)."""
+    return _tm_wprost(lat, lon, 19.0, 0.9993, 500000.0, -5300000.0)
+
+
 def z_ukladu_pl(a: float, b: float) -> tuple[float, float, str] | None:
     """Para liczb w metrach -> (lat, lon, układ). Rozpoznaje PUWG 1992 (EPSG:2180) i PUWG 2000 (EPSG:2176-2179),
     w obu kolejnościach osi (geodezyjne X to północ, w GIS-ie x to wschód)."""

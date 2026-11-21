@@ -116,6 +116,37 @@ class StoreSearchTest(unittest.TestCase):
         self.assertEqual([item["id_aed"] for item in result["wyniki"]], ["aed-1"])
         self.assertEqual(self.store.search(public_only=True)["razem"], 2)
 
+    def test_export_records_fetches_dane_gov_instead_of_local_records(self):
+        remote_record = AED("online-1", 52.4, 21.2, "danegov", "", "", nazwa_obiektu="Online")
+        with mock.patch.object(dg, "load", return_value=([remote_record], [])) as load:
+            records = self.store.export_records()
+
+        self.assertEqual(records, [remote_record])
+        load.assert_called_once_with({})
+
+    def test_export_xlsx_uses_polish_headers_and_single_sheet(self):
+        try:
+            import openpyxl
+        except ImportError:
+            self.skipTest("openpyxl nie jest zainstalowany")
+
+        from io import BytesIO
+        with mock.patch.object(dg, "load", return_value=(self.store.by_source["danegov"], [])):
+            wb = openpyxl.load_workbook(BytesIO(self.store.export_xlsx()), read_only=True)
+        self.assertEqual(wb.sheetnames, ["AED"])
+        ws = wb["AED"]
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        self.assertEqual(headers, [
+            "numer_seryjny_aed", "szerokosc_geograficzna", "dlugosc_geograficzna",
+            "wojewodztwo", "miejscowosc", "kod_pocztowy", "adres_uliczny",
+            "wewnatrz_budynku", "nazwa_budynku", "dokladna_lokalizacja",
+            "typ_dostepnosci", "godziny_dostepnosci", "czy_zamkniety",
+            "status_operacyjny", "nazwa_operatora", "data_waznosci_elektrod",
+            "data_waznosci_baterii", "data_aktualizacji_rekordu", "zrodlo_danych",
+            "mozliwy_duplikat",
+        ])
+        self.assertEqual(ws.max_row, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

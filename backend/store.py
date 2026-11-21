@@ -236,9 +236,10 @@ class Store:
 
     # ------------------------------------------------------------ eksport (wzorcowy zakres)
     def export_records(self) -> list[AED]:
-        """Tylko źródła publiczne. OSM (ODbL) celowo wyłączony z eksportu."""
-        with self.lock:
-            return list(self.by_source.get("danegov", []))
+        """Pobiera do eksportu wyłącznie aktualne rekordy z publicznego API dane.gov.pl."""
+        src = self.cfg.get("danegov", {})
+        records, _ = source_danegov.load(src)
+        return records
 
     def export_csv(self) -> bytes:
         buf = io.StringIO()
@@ -255,3 +256,106 @@ class Store:
                   "properties": {k: v for k, v in r.to_dict().items() if k not in ("szerokosc", "dlugosc")}}
                  for r in self.export_records()]
         return json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False).encode()
+
+    def export_xlsx(self) -> bytes:
+        """Eksportuje jeden arkusz zgodny ze wzorcowym schematem dane.gov.pl."""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill
+            from openpyxl.worksheet.table import Table, TableStyleInfo
+        except ImportError as exc:
+            raise RuntimeError("Brakuje biblioteki openpyxl. Zainstaluj zależności poleceniem: pip install openpyxl") from exc
+
+        headers = [
+            "numer_seryjny_aed", "szerokosc_geograficzna", "dlugosc_geograficzna",
+            "wojewodztwo", "miejscowosc", "kod_pocztowy", "adres_uliczny",
+            "wewnatrz_budynku", "nazwa_budynku", "dokladna_lokalizacja",
+            "typ_dostepnosci", "godziny_dostepnosci", "czy_zamkniety",
+            "status_operacyjny", "nazwa_operatora", "data_waznosci_elektrod",
+            "data_waznosci_baterii", "data_aktualizacji_rekordu", "zrodlo_danych",
+            "mozliwy_duplikat",
+        ]
+
+        records = self.export_records()
+        serial_numbers = [r.id_aed if r.id_aed.startswith("SN-") else "" for r in records]
+        duplicate_counts = {}
+        for serial in serial_numbers:
+            if serial:
+                duplicate_counts[serial] = duplicate_counts.get(serial, 0) + 1
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "AED"
+        ws.append(headers)
+
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F4E78")
+
+        for r, serial in zip(records, serial_numbers):
+            if r.dostep == "publiczny":
+                availability = "24/7"
+            elif r.dostep == "w_godzinach":
+                availability = "GODZINY_OTWARCIA"
+            elif r.dostep in ("ograniczony", "prywatny"):
+                availability = "TYLKO_PERSONEL"
+            else:
+                availability = None
+
+            updated = None
+            if r.data_weryfikacji:
+                try:
+                    updated = datetime.strptime(r.data_weryfikacji[:10], "%Y-%m-%d").date()
+                except ValueError:
+                    updated = None
+
+            row = [
+                serial or None,
+                r.szerokosc,
+                r.dlugosc,
+                None,
+                None,
+                None,
+                r.adres or None,
+                None if r.wewnatrz is None else ("TRUE" if r.wewnatrz else "FALSE"),
+                r.nazwa_obiektu or None,
+                r.opis_lokalizacji or None,
+                availability,
+                r.godziny_dostepnosci or None,
+                None,
+                "NIEZNANY",
+                r.dysponent or None,
+                None,
+                None,
+                updated,
+                r.zrodlo_url or r.zrodlo or None,
+                "TRUE" if serial and duplicate_counts[serial] > 1 else "FALSE",
+            ]
+            ws.append(row)
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        ws.sheet_view.showGridLines = False
+        ws.row_dimensions[1].height = 30
+        for column in ws.columns:
+            max_length = max(len(str(cell.value)) for cell in column if cell.value is not None)
+            ws.column_dimensions[column[0].column_letter].width = min(max(max_length + 2, 12), 45)
+
+        if ws.max_row >= 2:
+            table = Table(displayName="AEDData", ref=ws.dimensions)
+            table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium2", showFirstColumn=False,
+                showLastColumn=False, showRowStripes=True, showColumnStripes=False,
+            )
+            ws.add_table(table)
+
+        for row_number in range(2, ws.max_row + 1):
+            ws.cell(row=row_number, column=2).number_format = "0.000000"
+            ws.cell(row=row_number, column=3).number_format = "0.000000"
+            for col_number in (16, 17, 18):
+                ws.cell(row=row_number, column=col_number).number_format = "yyyy-mm-dd"
+
+        from io import BytesIO
+        out = BytesIO()
+        wb.save(out)
+        return out.getvalue()

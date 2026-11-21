@@ -123,6 +123,12 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/export.csv":
                 return self._send(s.export_csv(), "text/csv; charset=utf-8",
                                   extra={"Content-Disposition": 'attachment; filename="aed_dane_gov_pl.csv"'})
+            if p == "/export.xlsx":
+                try:
+                    return self._send(s.export_xlsx(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                      extra={"Content-Disposition": 'attachment; filename="aed_dane_gov_pl.xlsx"'})
+                except RuntimeError as exc:
+                    return self._json({"blad": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             if p == "/export.geojson":
                 return self._send(s.export_geojson(), "application/geo+json",
                                   extra={"Content-Disposition": 'attachment; filename="aed_dane_gov_pl.geojson"'})

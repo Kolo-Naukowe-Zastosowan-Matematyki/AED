@@ -27,6 +27,18 @@ działają, ale zdjęcie nie jest wstępnie oceniane.
 
 Testy (bez sieci): `python -m unittest discover -s tests -v`
 
+Dla eksportu XLSX zainstaluj zależność:
+
+```
+pip install -r requirements.txt
+```
+
+Arkusz XLSX można wygenerować bez uruchamiania serwera:
+
+```
+python -m scraping.run --xlsx
+```
+
 ## Cztery strefy kodu
 
 ```
@@ -61,7 +73,7 @@ API modułu:
 | `GET /aed-api/nearest?lat=..&lon=..&n=3&tylko_dostepne=1` | najbliższe AED, np. dla dyspozytora |
 | `GET /aed-api/stats`, `GET /aed-api/sources` | liczniki oraz stan źródeł i raport pobierania |
 | `POST /aed-api/refresh` | ponowne pobranie z dane.gov.pl |
-| `GET /aed-api/export.csv`, `/aed-api/export.geojson` | zbiór we wzorcowym zakresie (tylko dane z dane.gov.pl) |
+| `GET /aed-api/export.csv`, `/aed-api/export.xlsx`, `/aed-api/export.geojson` | zbiór we wzorcowym zakresie (tylko dane z dane.gov.pl) |
 | `POST /aed-api/zdjecie?lat=..&lon=..` | wstępna ocena zdjęcia (strefa 4) |
 | `POST /aed-api/zgloszenia`, `GET /aed-api/zgloszenia` | zgłoszenie nowego AED i lista zgłoszeń |
 

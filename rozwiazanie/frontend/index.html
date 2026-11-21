@@ -176,6 +176,12 @@
     .rtable tbody tr { background: #fff; }
     .rtable tbody tr:hover { background: #f4f9fd; }
     .rtable .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .map-locate { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; cursor: pointer;
+      background: #fff; border: 2px solid rgba(0, 0, 0, .2); border-radius: 4px; background-clip: padding-box; color: #0b4f7c; }
+    .map-locate svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+    .map-locate:hover { background-color: #f4f4f4; }
+    .map-locate:focus-visible { outline: 3px solid #ffc400; }
+    .map-locate.is-busy { color: #d88a00; }
     #rmap { height: min(70vh, 620px); min-height: 360px; background: #e9eef2; border: 1px solid #d5d9dc; }
     .map-note { font-size: 13px; color: #56636d; }
     .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #7a8794; border: 1px solid #fff; box-shadow: 0 0 0 1px #9aa5ae; vertical-align: -1px; }
@@ -1026,6 +1032,7 @@
           L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">współtwórcy OpenStreetMap</a>' }).addTo(rmap);
           markers = L.layerGroup().addTo(rmap);
+          locateControl().addTo(rmap);
         }
         rmap.invalidateSize();
         markers.clearLayers();
@@ -1065,6 +1072,39 @@
           pts.push(me);
         }
         if (pts.length) rmap.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 16 });
+      }
+      // Przycisk „Moja lokalizacja”: centruje mapę na użytkowniku i zaznacza jego położenie
+      let meMarker = null;
+      function locateControl() {
+        const Ctl = L.Control.extend({
+          options: { position: "topleft" },
+          onAdd() {
+            const btn = L.DomUtil.create("button", "map-locate");
+            btn.type = "button";
+            btn.title = "Pokaż moją lokalizację";
+            btn.setAttribute("aria-label", "Pokaż moją lokalizację");
+            btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle>' +
+              '<path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="7"></circle></svg>';
+            L.DomEvent.disableClickPropagation(btn);
+            L.DomEvent.on(btn, "click", () => {
+              if (!navigator.geolocation) { btn.title = "Przeglądarka nie udostępnia lokalizacji"; return; }
+              btn.classList.add("is-busy");
+              navigator.geolocation.getCurrentPosition((pos) => {
+                btn.classList.remove("is-busy");
+                const me = [pos.coords.latitude, pos.coords.longitude];
+                if (meMarker) meMarker.remove();
+                meMarker = L.circleMarker(me, { radius: 8, weight: 3, color: "#fff", fillColor: "#0066a4", fillOpacity: 1 })
+                  .bindTooltip("Twoja lokalizacja").addTo(rmap);
+                rmap.setView(me, Math.max(rmap.getZoom(), 15));
+              }, () => {
+                btn.classList.remove("is-busy");
+                btn.title = "Nie udało się ustalić lokalizacji (brak zgody przeglądarki?)";
+              }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+            });
+            return btn;
+          },
+        });
+        return new Ctl();
       }
 
       // „Znajdź najbliższe”: lokalizacja przeglądarki -> najbliższe AED z rejestru (API /aed-api/nearest)

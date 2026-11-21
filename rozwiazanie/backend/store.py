@@ -40,10 +40,22 @@ class Store:
         self.status: dict[str, dict] = {}
         self.records: list[AED] = []
         self._points_cache: tuple[float, bytes] | None = None
+        self.std: list[dict] = []
 
     # ------------------------------------------------------------ ładowanie
     def _rebuild(self):
+        """Rekordy + ich wiersze w złotym standardzie (do filtrów i podpowiedzi), z wyliczonym possible_duplicate."""
+        from rozwiazanie.scraping.agregacja import _duplikaty, standard_rekordu
         self.records = list(self.by_source.get("danegov", []))
+        std = []
+        for r in self.records:
+            row = standard_rekordu(r)
+            r.extra["std"] = row
+            std.append(row)
+        dup = _duplikaty([x for x in std if x]) if all(std) else set()
+        for i, row in enumerate(std):
+            row["possible_duplicate"] = i in dup
+        self.std = std
         self._points_cache = None
 
     def _save_cache(self, name: str, records: list[AED], report: list | None = None):
@@ -137,6 +149,7 @@ class Store:
             d["otwarte_teraz"] = is_open(r.godziny_dostepnosci)
             d["zbior"] = r.extra.get("zbior", "")
             d["idx"] = idx
+            d["standard"] = dict(self.std[idx]) if idx < len(self.std) else {}  # kolumny chronione usuwa app.visible
             return d
 
     @staticmethod
@@ -145,12 +158,27 @@ class Store:
         return "".join(char for char in normalized if not unicodedata.combining(char))
 
     def search(self, query: str = "", location: str = "", access: str = "", source: str = "",
-               public_only: bool = False, limit: int = 25, offset: int = 0) -> dict:
+               public_only: bool = False, limit: int = 25, offset: int = 0, filtry: dict | None = None,
+               protected=None) -> dict:
+        """Wyszukiwanie. `filtry`: {pole: wartość} już przefiltrowane wg roli (backend/filtry.py: aktywne).
+        `protected`: dane chronione (tylko dla administratora) dołączane do wiersza przed filtrowaniem."""
+        from .filtry import pasuje
         query = self._search_text(query.strip())
         location = self._search_text(location.strip())
+        filtry = filtry or {}
+        now = datetime.now()
         with self.lock:
             matches = []
             for idx, record in enumerate(self.records):
+                if filtry:
+                    row = self.std[idx]
+                    if protected is not None:
+                        row = {**row, **{k: v for k, v in protected.get(record.id_aed).items() if v not in ("", None)}}
+                    otwarte = is_open(record.godziny_dostepnosci, now) if "otwarte_teraz" in filtry else None
+                    if record.dostep == "publiczny" and not record.godziny_dostepnosci:
+                        otwarte = True if otwarte is None else otwarte
+                    if not pasuje(row, filtry, otwarte):
+                        continue
                 if access and record.dostep != access:
                     continue
                 if source and record.zrodlo != source:
@@ -160,12 +188,16 @@ class Store:
 
                 fields = record.to_dict()
                 fields["zbior"] = record.extra.get("zbior", "")
+                if protected is not None:  # numer seryjny szuka tylko administrator
+                    fields["aed_sn"] = protected.get(record.id_aed).get("aed_sn", "") or self.std[idx].get("aed_sn", "")
                 searchable = self._search_text(" ".join(str(value) for value in fields.values()))
                 if query and query not in searchable:
                     continue
+                st = self.std[idx]
                 place_text = self._search_text(" ".join((
                     record.adres, record.opis_lokalizacji, record.nazwa_obiektu,
-                    str(record.extra.get("zbior", "")),
+                    str(record.extra.get("zbior", "")), st.get("city", ""), st.get("region", ""),
+                    st.get("postal_code", ""), st.get("street_address", ""),
                 )))
                 if location and location not in place_text:
                     continue

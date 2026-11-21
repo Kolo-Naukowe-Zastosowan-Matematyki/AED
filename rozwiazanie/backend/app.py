@@ -21,7 +21,8 @@ from pathlib import Path
 
 from common.http import BaseHandler
 from rozwiazanie.backend.auth import Auth
-from rozwiazanie.backend.columns import ProtectedData, apply_role, columns_for
+from rozwiazanie.backend.columns import PROTECTED_FIELDS, ROLE_ADMIN, ProtectedData, apply_role, columns_for
+from rozwiazanie.backend.filtry import aktywne as active_filters
 from rozwiazanie.backend.map_export import build_map_html
 from rozwiazanie.backend.store import Store
 
@@ -86,7 +87,14 @@ class SerwisHandler(BaseHandler):
         role = self.auth.role(self.headers)
 
         def visible(item: dict) -> dict:
-            return apply_role(item, role, self.protected)
+            out = apply_role(item, role, self.protected)
+            if isinstance(out.get("standard"), dict):  # wiersz złotego standardu: chronione tylko dla administratora
+                std = out["standard"]
+                if role == ROLE_ADMIN:
+                    std.update({k: v for k, v in self.protected.get(str(item.get("id_aed", ""))).items() if v})
+                else:
+                    out["standard"] = {k: v for k, v in std.items() if k not in PROTECTED_FIELDS}
+            return out
 
         if method == "GET":
             if p == "/auth/rola":
@@ -96,8 +104,11 @@ class SerwisHandler(BaseHandler):
             if p == "/search":
                 limit = min(max(int(q.get("limit", 25)), 1), 100)
                 offset = max(int(q.get("offset", 0)), 0)
+                # filtry po kolumnach chronionych: tylko administrator (wymuszone tu)
                 res = s.search(q.get("q", ""), q.get("miejsce", ""), q.get("dostep", ""),
-                               q.get("zrodlo", ""), q.get("publiczny", "0") == "1", limit, offset)
+                               q.get("zrodlo", ""), q.get("publiczny", "0") == "1", limit, offset,
+                               filtry=active_filters(q, role),
+                               protected=self.protected if role == ROLE_ADMIN else None)
                 res["wyniki"] = [visible(r) for r in res["wyniki"]]
                 res["rola"] = role
                 return self._json(res)

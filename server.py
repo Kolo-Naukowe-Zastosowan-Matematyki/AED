@@ -50,6 +50,12 @@ if __name__ == "__main__":
     portal = bind(setup_portal(BASE, cfg, serwis_url + "/aed-api", (cfg.get("serwis") or {}).get("url") or serwis_url),
                   args.host, [args.port] + list(range(8765, 8785)), "Portal dane.gov.pl")
     portal_url = f"http://localhost:{portal.server_address[1]}"
+    # logowanie w serwisie AED kontem portalu: formularz „Zaloguj się” makiety, rola z jej /api/auth/user
+    auth = serwis.RequestHandlerClass.auth
+    if not auth.api_url:
+        auth.api_url = f"http://127.0.0.1:{portal.server_address[1]}/api"
+    if not auth.login_url:
+        auth.login_url = f"{portal_url}/pl/user/login?redirect=/pl/aed-powrot"
 
     log.info("Portal dane.gov.pl:  %s  (zbiór AED: %s/pl/dataset/aed,system-ewidencji-zasobow-aed)",
              portal_url, portal_url)

@@ -84,7 +84,8 @@ class SerwisHandler(BaseHandler):
     def _api(self, method: str, p: str, q: dict):
         s = self.store
         # Rola z tokenu (ciasteczko serwisu albo JWT portalu). Kolumny chronione tylko dla administratora.
-        role = self.auth.role(self.headers)
+        account = self.auth.account(self.headers)
+        role = account["rola"]
 
         def visible(item: dict) -> dict:
             out = apply_role(item, role, self.protected)
@@ -98,7 +99,10 @@ class SerwisHandler(BaseHandler):
 
         if method == "GET":
             if p == "/auth/rola":
-                return self._json({"rola": role, "tryb": self.auth.mode, "dane_demo": self.protected.demo})
+                return self._json({"rola": role, "uzytkownik": account["uzytkownik"], "dane_demo": self.protected.demo})
+            if p == "/auth/zaloguj":  # formularz „Zaloguj się” portalu dane.gov.pl, po zalogowaniu powrót tutaj
+                return self._send(b"", "text/plain", HTTPStatus.FOUND,
+                                  {"Location": self.auth.login_url or "/", "Cache-Control": "no-store"})
             if p == "/kolumny":
                 return self._json({"rola": role, "kolumny": columns_for(role)})
             if p == "/search":
@@ -160,16 +164,10 @@ class SerwisHandler(BaseHandler):
                 return self._send(self._map(self._origin()), "text/html; charset=utf-8",
                                   extra={"Content-Disposition": 'attachment; filename="mapa_aed.html"'})
         if method == "POST":
-            if p == "/auth/login":
-                payload = json.loads(self._body(4 * 1024) or b"{}")
-                token = self.auth.login(payload.get("haslo", ""))
-                if not token:
-                    log.warning("Nieudane logowanie administratora z %s", self.address_string())
-                    return self._json({"blad": "nieprawidłowe hasło"}, HTTPStatus.UNAUTHORIZED)
-                return self._json({"rola": "admin"}, extra={"Set-Cookie": self.auth.cookie_header(token)})
             if p == "/auth/logout":
                 self.auth.logout(self.headers)
-                return self._json({"rola": "publiczny"}, extra={"Set-Cookie": self.auth.cookie_header("", 0)})
+                return self._json({"rola": "publiczny"},
+                                  extra={"Set-Cookie": self.auth.logout_cookies(self.headers.get("Host", ""))})
             if p == "/refresh":
                 threading.Thread(target=s.refresh_danegov, daemon=True).start()
                 return self._json({"ok": True}, HTTPStatus.ACCEPTED)

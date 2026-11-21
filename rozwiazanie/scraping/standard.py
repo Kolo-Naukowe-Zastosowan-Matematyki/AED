@@ -491,11 +491,17 @@ def standaryzuj(row: dict, mapa: dict, ctx: dict, geokoder=None) -> tuple[dict |
         rec["region"] = TERYT_WOJ.get(tekst(row.get(mapa["teryt"])).zfill(7)[:2], "")
     if not rec["region"] and geo and geo.get("region"):
         rec["region"] = geo["region"]
-    if not rec["region"] and geokoder is not None:
+    # odwrotne geokodowanie (najbliższy punkt adresowy PRG): województwo, a gdy źródło podaje same współrzędne,
+    # także ulica i kod pocztowy, żeby punkty z jednej miejscowości dało się od siebie odróżnić
+    if geokoder is not None and (not rec["region"] or not rec["street_address"]):
         rev = geokoder.odwrotne(rec["latitude"], rec["longitude"])
         if rev:
-            rec["region"] = rev.get("region", "")
+            rec["region"] = rec["region"] or rev.get("region", "")
             rec["city"] = rec["city"] or rev.get("city", "")
+            if not rec["street_address"] and rev.get("street_address"):
+                rec["street_address"] = rev["street_address"]
+                rec["postal_code"] = rec["postal_code"] or kod_pocztowy(rev.get("postal_code", ""))
+                uwagi.append("adres z odwrotnego geokodowania GUGiK")
     rec["region"] = rec["region"] or woj_z_pna(rec["postal_code"]) or ctx.get("wojewodztwo", "")
 
     rec["building_name"] = g("building_name")

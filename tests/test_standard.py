@@ -153,6 +153,16 @@ class OdwrotneTest(unittest.TestCase):
             self.assertEqual(geo.odwrotne(52.326697, 21.107557)["city"], "Marki")
             self.assertEqual(len(asked), 4)            # pamięć podręczna
 
+    def test_coordinates_only_get_street_from_reverse(self):
+        class Rev(FakeGeo):
+            def odwrotne(self, lat, lon):
+                return {"region": "mazowieckie", "city": "Marki", "street_address": "Fabryczna 2", "postal_code": "05-270"}
+        raw = "Lp;Szerokosc;Dlugosc\n1;52,326697;21,107557\n".encode("utf-8")
+        recs, entry, _ = run(raw, geo=Rev())
+        r = recs[0]
+        self.assertEqual((r["city"], r["street_address"], r["postal_code"]), ("Marki", "Fabryczna 2", "05-270"))
+        self.assertEqual(entry["uwagi_wartosci"]["adres z odwrotnego geokodowania GUGiK"], 1)
+
     def test_puwg1992_roundtrip(self):
         e, n = standard.do_puwg1992(52.326697, 21.107557)
         lat, lon, uklad = standard.wspolrzedne(str(n), str(e))

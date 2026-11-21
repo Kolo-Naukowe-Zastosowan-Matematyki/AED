@@ -158,7 +158,8 @@ def definicje(rows: list[dict], rola: str) -> dict:
 
 def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8) -> list[dict]:
     """Podpowiedzi do pola „Adres, miejscowość lub lokalizacja” z danych rejestru (tylko kolumny jawne):
-    miejscowości, ulice z miejscowością, województwa, kody pocztowe. Najpierw dopasowanie od początku słowa."""
+    cały kraj („Polska”), miejscowości, gminy i powiaty (gdy jest słownik TERC), województwa, ulice z miejscowością,
+    kody pocztowe. Najpierw dopasowanie od początku słowa."""
     q = _sortkey(fraza.strip())
     if len(q) < 2:
         return []
@@ -166,7 +167,8 @@ def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8) -> list[dict]:
     typ: dict[str, str] = {}
     for r in rows:
         for tekst, rodzaj in ((r.get("city"), "miejscowość"), (r.get("region"), "województwo"),
-                              (r.get("postal_code"), "kod pocztowy"),
+                              (r.get("powiat"), "powiat"), (r.get("gmina"), "gmina"),
+                              ("Polska", "cały kraj"), (r.get("postal_code"), "kod pocztowy"),
                               (", ".join(x for x in (r.get("street_address"), r.get("city")) if x)
                                if r.get("street_address") else "", "adres")):
             if tekst:
@@ -183,7 +185,8 @@ def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8) -> list[dict]:
             ranga = 2
         else:
             continue
-        kolej = {"miejscowość": 0, "województwo": 1, "adres": 2, "kod pocztowy": 3}[typ[tekst]]
+        kolej = {"cały kraj": 0, "miejscowość": 1, "gmina": 2, "powiat": 3, "województwo": 4, "adres": 5,
+                 "kod pocztowy": 6}[typ[tekst]]
         trafienia.append((ranga, kolej, -n, _sortkey(tekst), tekst))
     trafienia.sort()
     return [{"tekst": t[4], "typ": typ[t[4]], "liczba": licz[t[4]]} for t in trafienia[:limit]]

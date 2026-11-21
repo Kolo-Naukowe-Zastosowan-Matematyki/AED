@@ -191,5 +191,40 @@ class StoreSearchTest(unittest.TestCase):
         self.assertEqual(dostepnosc(self.store.filter_defs("publiczny", location="Kraków")), {"24/7": 1})
 
 
+class TercTest(unittest.TestCase):
+    def setUp(self):
+        from rozwiazanie.backend.teryt import Terc, _czytaj
+        self.terc = Terc(_czytaj((Path(__file__).parent / "dane" / "terc.csv").read_bytes()))
+
+    def test_area_from_city(self):
+        self.assertEqual(self.terc.obszar("Legionowo", "mazowieckie"),
+                         {"powiat": "powiat legionowski", "gmina": "gmina Legionowo"})
+        self.assertEqual(self.terc.obszar("Radzymin", "mazowieckie")["powiat"], "powiat wołomiński")
+        # miasto na prawach powiatu wygrywa z gminą wiejską o tej samej nazwie
+        self.assertEqual(self.terc.obszar("Przemyśl", "podkarpackie")["powiat"], "Przemyśl (miasto na prawach powiatu)")
+        self.assertEqual(self.terc.obszar("Nieznane", "mazowieckie"), {})
+
+    def test_search_and_suggest_by_district(self):
+        import tempfile
+        from rozwiazanie.backend.schema import AED
+        from rozwiazanie.backend.store import Store
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp), {})
+            store.terc = self.terc
+            store.by_source["danegov"] = [
+                AED("a", 52.395, 20.931, "danegov", "", "", adres="ul. Piłsudskiego 41, 05-120 Legionowo"),
+                AED("b", 52.327, 21.108, "danegov", "", "", adres="al. Piłsudskiego 95, 05-270 Marki")]
+            store._rebuild()
+            self.assertEqual([r["id_aed"] for r in store.search(location="powiat legionowski")["wyniki"]], ["a"])
+            self.assertEqual(store.search(location="gmina Marki")["razem"], 1)
+            sug = {s["tekst"]: s["typ"] for s in store.suggest("legion")}
+            self.assertEqual(sug.get("powiat legionowski"), "powiat")
+            self.assertEqual(sug.get("gmina Legionowo"), "gmina")
+            self.assertEqual(store.suggest("pols")[0]["tekst"], "Polska")
+            defs = store.filter_defs("publiczny", location="Legionowo")  # filtr „Miejscowość” tylko z wyników
+            miasta = next(f for c in defs["kategorie"] for f in c["filtry"] if f["pole"] == "city")["opcje"]
+            self.assertEqual([o["wartosc"] for o in miasta], ["Legionowo"])
+
+
 if __name__ == "__main__":
     unittest.main()

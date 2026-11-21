@@ -41,6 +41,9 @@ class Store:
         self.records: list[AED] = []
         self._points_cache: tuple[float, bytes] | None = None
         self.std: list[dict] = []
+        self.obszary: list[dict] = []  # powiat i gmina rekordu (backend/teryt.py), do wyszukiwania po obszarze
+        from .teryt import Terc
+        self.terc = Terc.z_katalogu(base / "common")
 
     # ------------------------------------------------------------ ładowanie
     def _rebuild(self):
@@ -56,6 +59,8 @@ class Store:
         for i, row in enumerate(std):
             row["possible_duplicate"] = i in dup
         self.std = std
+        self.obszary = [self.terc.obszar(row.get("city", ""), row.get("region", "")) if self.terc and row else {}
+                        for row in std]
         self._points_cache = None
 
     def _save_cache(self, name: str, records: list[AED], report: list | None = None):
@@ -181,7 +186,7 @@ class Store:
     def suggest(self, phrase: str, limit: int = 8) -> list[dict]:
         from .filtry import podpowiedzi
         with self.lock:
-            rows = list(self.std)
+            rows = [{**row, **ob} for row, ob in zip(self.std, self.obszary or [{}] * len(self.std))]
         return podpowiedzi(rows, phrase, limit)
 
     @staticmethod
@@ -203,12 +208,14 @@ class Store:
         filtry = filtry or {}
         now = datetime.now()
         with self.lock:
-            # fraza równa nazwie miejscowości, województwa albo kodowi pocztowemu (np. wybrana podpowiedź „Kraków”)
-            # -> dokładne dopasowanie tego pola, żeby „Kraków” nie łapał „ul. Krakowska” w innych miastach
+            obszary = self.obszary if len(self.obszary) == len(self.std) else [{}] * len(self.std)
+            # fraza równa nazwie miejscowości, gminy, powiatu, województwa albo kodowi pocztowemu (np. wybrana
+            # podpowiedź „Kraków”) -> dokładne dopasowanie tego pola, żeby „Kraków” nie łapał „ul. Krakowska”
             exact_field = None
             if location:
-                for field in ("city", "region", "postal_code"):
-                    if any(self._search_text(str(st.get(field) or "")) == location for st in self.std):
+                for field in ("city", "gmina", "powiat", "region", "postal_code"):
+                    if any(self._search_text(str({**st, **ob}.get(field) or "")) == location
+                           for st, ob in zip(self.std, obszary)):
                         exact_field = field
                         break
             matches = []
@@ -235,7 +242,7 @@ class Store:
                         fields["aed_sn"] = protected.get(record.id_aed).get("aed_sn", "") or self.std[idx].get("aed_sn", "")
                     if query not in self._search_text(" ".join(str(value) for value in fields.values())):
                         continue
-                st = self.std[idx]
+                st = {**self.std[idx], **obszary[idx]}
                 if exact_field:
                     if self._search_text(str(st.get(exact_field) or "")) != location:
                         continue
@@ -243,7 +250,7 @@ class Store:
                     place_text = self._search_text(" ".join((
                         record.adres, record.opis_lokalizacji, record.nazwa_obiektu,
                         str(record.extra.get("zbior", "")), st.get("city", ""), st.get("region", ""),
-                        st.get("postal_code", ""), st.get("street_address", ""),
+                        st.get("postal_code", ""), st.get("street_address", ""), st.get("powiat", ""), st.get("gmina", ""),
                     )))
                     if location not in place_text:
                         continue

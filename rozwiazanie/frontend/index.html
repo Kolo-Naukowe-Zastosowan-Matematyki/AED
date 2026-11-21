@@ -1071,7 +1071,21 @@
             .bindTooltip("Twoja lokalizacja").addTo(markers);
           pts.push(me);
         }
-        if (pts.length) rmap.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 16 });
+        fitResults(pts);
+      }
+      // Widok na wyniki: punkty odstające (np. błędne współrzędne z innego miasta, > 30 km od mediany) nie
+      // rozciągają mapy na pół Europy; nadal są na mapie. Dopasowanie po ułożeniu panelu (wcześniej ma 0 px).
+      function fitResults(pts) {
+        if (!pts.length) return;
+        const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor((xs.length - 1) / 2)];
+        const lat0 = med(pts.map((p) => p[0])), lon0 = med(pts.map((p) => p[1]));
+        const km = (p) => Math.hypot((p[0] - lat0) * 111.2, (p[1] - lon0) * 111.2 * Math.cos(lat0 * Math.PI / 180));
+        const near = pts.filter((p) => km(p) <= 30);
+        const use = pts.length >= 3 && near.length >= 0.75 * pts.length ? near : pts;
+        requestAnimationFrame(() => {
+          rmap.invalidateSize();
+          rmap.fitBounds(L.latLngBounds(use).pad(0.15), { maxZoom: 16 });
+        });
       }
       // Przycisk „Moja lokalizacja”: centruje mapę na użytkowniku i zaznacza jego położenie
       let meMarker = null;

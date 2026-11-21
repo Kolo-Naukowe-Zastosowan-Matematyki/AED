@@ -45,6 +45,18 @@ def run(raw: bytes, fmt="csv", geo=None):
 
 
 class CzytnikiTest(unittest.TestCase):
+    def test_whole_row_in_one_cell(self):
+        # plik Marek: cały wiersz w jednej komórce, nagłówek „Długość geograficzna,Szerokość geograficzna, Nazwa, …”
+        raw = ('"Długość geograficzna,Szerokość geograficzna, Nazwa, Lokalizacja, Adres, Numer Id"\n'
+               '"21.107557,52.326697,Urząd Miasta Marki,hol parter,al. Józefa Piłsudskiego 95, Marki,1"\n'
+               '"21.098185,52.32396,Szkoła Podstawowa nr 2,portiernia,ul. Szkolna 2,2"\n').encode("utf-8")
+        recs, entry, _ = run(raw)
+        r = recs[0]
+        self.assertEqual((r["latitude"], r["longitude"]), (52.326697, 21.107557))
+        self.assertEqual((r["building_name"], r["exact_location"]), ("Urząd Miasta Marki", "hol parter"))
+        self.assertEqual(r["street_address"], "al. Józefa Piłsudskiego 95, Marki")  # przecinek w adresie
+        self.assertEqual(recs[1]["street_address"], "ul. Szkolna 2")
+
     def test_csv_cp1250_semicolon_decimal_comma_title_row(self):
         raw = ("Wykaz defibrylatorów AED – stan na 2026\n\n"
                "Lp.;Nazwa obiektu;Adres;Szerokość geograficzna;Długość geograficzna;Dostępność\n"

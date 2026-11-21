@@ -70,9 +70,39 @@ def _naglowek(rows: list[list]) -> int:
     return 0
 
 
+def _rozbij_jedna_kolumne(rows: list[list]) -> list[list]:
+    """Cały wiersz w jednej komórce (np. arkusz z „21.10,52.32,Urząd Miasta,hol,…” w kolumnie A): dzieli komórki
+    separatorem z nagłówka. Gdy wartość ma więcej części niż nagłówek (przecinek w tekście), nadmiar trafia do kolumny
+    adresu albo lokalizacji, a gdy takiej nie ma – do ostatniej."""
+    pelne = [[c for c in r if not _pusty(c)] for r in rows]
+    if not pelne or any(len(r) > 1 for r in pelne):
+        return rows
+    first = next((r[0] for r in pelne if r), None)
+    if not isinstance(first, str):
+        return rows
+    d = max((";", ",", "\t", "|"), key=first.count)
+    header = next(csv.reader([first], delimiter=d, skipinitialspace=True))
+    if len(header) < 3:
+        return rows
+    n = len(header)
+    low = [h.lower() for h in header]
+    gdzie = next((i for key in ("adres", "lokaliz") for i, h in enumerate(low) if key in h), n - 1)
+    out = []
+    for r in pelne:
+        if not r:
+            continue
+        parts = next(csv.reader([str(r[0])], delimiter=d, skipinitialspace=True)) if r else []
+        if len(parts) > n:
+            extra = len(parts) - n
+            parts = parts[:gdzie] + [", ".join(parts[gdzie:gdzie + extra + 1])] + parts[gdzie + extra + 1:]
+        out.append([p.strip() for p in parts])
+    return out
+
+
 def _do_slownikow(rows: list[list]) -> list[dict]:
     if not rows:
         return []
+    rows = _rozbij_jedna_kolumne(rows)
     h = _naglowek(rows)
     header, seen = [], Counter()
     for i, c in enumerate(rows[h]):

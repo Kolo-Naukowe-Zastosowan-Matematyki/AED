@@ -217,7 +217,12 @@
     .result__hours { color: #34414c; font-size: 13px; font-weight: 650; align-self: center; }
     .badge { padding: 4px 9px; background: #e6f3eb; color: #176239; border-radius: 2px; font-size: 12px; font-weight: 700; }
     .badge--unknown { background: #eef0f2; color: #4d5962; }
-    .admin-link { border: 0; background: none; color: var(--blue); font-weight: 650; cursor: pointer; padding: 0; }
+    .admin-link { border: 0; background: none; color: var(--blue); font-weight: 650; cursor: pointer; padding: 0;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+    .admin-link:hover { text-decoration: underline; }
+    .admin-link svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .user-box { display: inline-flex; align-items: center; gap: 14px; font-size: 14px; color: #1b2733; }
+    .user-box[hidden] { display: none; }
     .admin-bar { background: #fff6e5; border-bottom: 1px solid #f0c36d; font-size: 14px; }
     .admin-bar__inner { width: min(1120px, calc(100% - 32px)); margin: auto; padding: 9px 0;
       display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -253,6 +258,8 @@
       .brand { font-size: 16px; }
       .topbar__links { gap: 9px; }
       .topbar__links a { max-width: 72px; line-height: 1.1; }
+      .topbar__links a.admin-link { max-width: none; }
+      .login-via { display: none; }
       .identity__acronym { font-size: 40px; }
       .identity__name { font-size: 16px; }
       .search-actions { align-items: flex-start; }
@@ -271,7 +278,15 @@
       <div class="brand-mark"><img src="/vendor/godlo/godlo.svg" alt="Godło Rzeczypospolitej Polskiej"></div>
       <a class="brand" href="/">Rejestr AED</a>
       <nav class="topbar__links" aria-label="Nawigacja">
-        <button class="admin-link" id="admin-toggle" type="button" aria-expanded="false" aria-controls="admin-bar">Administrator</button>
+        <!-- logowanie kontem dane.gov.pl (makieta portalu): rola z konta portalu, bez osobnego hasła serwisu -->
+        <a class="admin-link" id="login-link" href="/aed-api/auth/zaloguj">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"></path></svg>
+          <span>Zaloguj się<span class="login-via"> przez dane.gov.pl</span></span>
+        </a>
+        <span class="user-box" id="user-box" hidden>
+          <span id="user-name"></span>
+          <button class="admin-link" id="logout" type="button">Wyloguj</button>
+        </span>
       </nav>
     </div>
   </header>
@@ -404,7 +419,8 @@
       let schemaCols = [];   // kolumny złotego standardu widoczne dla roli (z serwera)
       const adminBar = document.getElementById("admin-bar");
       const adminInner = document.getElementById("admin-bar-inner");
-      const adminToggle = document.getElementById("admin-toggle");
+      const loginLink = document.getElementById("login-link");
+      const userBox = document.getElementById("user-box");
 
       async function loadRole() {
         try {
@@ -415,7 +431,7 @@
           role = r.rola;
           columnLabels = Object.fromEntries(k.kolumny.map((c) => [c.pole, c.nazwa]));
           schemaCols = k.kolumny;
-          renderAdminBar(r.dane_demo);
+          renderAccount(r);
         } catch {
           role = "publiczny";
         }
@@ -629,66 +645,25 @@
       });
       placeInput.addEventListener("blur", () => setTimeout(closeSuggest, 100));
 
-      function renderAdminBar(demo, error = "") {
+      // Konto: logowanie w portalu dane.gov.pl (formularz „Zaloguj się” portalu), rola z konta portalu
+      function renderAccount(r) {
+        loginLink.hidden = Boolean(r.uzytkownik);
+        userBox.hidden = !r.uzytkownik;
+        document.getElementById("user-name").textContent = r.uzytkownik
+          ? `${r.uzytkownik}${role === "admin" ? " · służby AED" : ""}` : "";
         adminInner.replaceChildren();
-        adminToggle.textContent = role === "admin" ? "Administrator ✓" : "Administrator";
-        if (role === "admin") {
-          adminBar.hidden = false;
-          appendText(adminInner, "strong", "", "Zalogowano jako administrator.");
-          appendText(adminInner, "span", "", demo
-            ? "Widzisz też kolumny chronione (dane przykładowe, zmyślone)."
-            : "Widzisz też kolumny chronione.");
-          const out = document.createElement("button");
-          out.type = "button";
-          out.textContent = "Wyloguj";
-          out.addEventListener("click", async () => {
-            await fetch("/aed-api/auth/logout", { method: "POST", credentials: "same-origin" });
-            await loadRole();
-            adminBar.hidden = true;
-            adminToggle.setAttribute("aria-expanded", "false");
-            rerun();
-          });
-          adminInner.append(out);
-          return;
-        }
-        const loginForm = document.createElement("form");
-        loginForm.className = "admin-bar__inner";
-        loginForm.style.width = "100%";
-        loginForm.style.padding = "0";
-        const label = appendText(loginForm, "label", "", "Hasło administratora");
-        label.htmlFor = "admin-password";
-        const input = document.createElement("input");
-        input.type = "password";
-        input.id = "admin-password";
-        input.autocomplete = "current-password";
-        loginForm.append(input);
-        const submit = document.createElement("button");
-        submit.type = "submit";
-        submit.textContent = "Zaloguj";
-        loginForm.append(submit);
-        if (error) appendText(loginForm, "span", "admin-bar__error", error);
-        loginForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          const response = await fetch("/aed-api/auth/login", {
-            method: "POST", credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ haslo: input.value }),
-          });
-          if (!response.ok) {
-            renderAdminBar(false, "Nieprawidłowe hasło.");
-            return;
-          }
-          await loadRole();
-          rerun();
-        });
-        adminInner.append(loginForm);
+        adminBar.hidden = !r.uzytkownik;
+        if (!r.uzytkownik) return;
+        appendText(adminInner, "strong", "", "Zalogowano przez dane.gov.pl.");
+        appendText(adminInner, "span", "", role === "admin"
+          ? (r.dane_demo ? "Konto z uprawnieniami służb: widzisz też kolumny chronione (dane przykładowe, zmyślone)."
+                         : "Konto z uprawnieniami służb: widzisz też kolumny chronione.")
+          : "To konto nie ma uprawnień służb AED, więc widzisz dane publiczne.");
       }
-
-      adminToggle.addEventListener("click", () => {
-        const open = adminBar.hidden;
-        adminBar.hidden = !open;
-        adminToggle.setAttribute("aria-expanded", String(open));
-        if (open && role !== "admin") document.getElementById("admin-password")?.focus();
+      document.getElementById("logout").addEventListener("click", async () => {
+        await fetch("/aed-api/auth/logout", { method: "POST", credentials: "same-origin" });
+        await loadRole();
+        rerun();
       });
 
       function protectedBox(item) {
@@ -1280,7 +1255,7 @@
         }
       });
       loadRole().then(() => {
-        if (location.hash === "#administrator") adminToggle.click();  // link „Administrator” z widoku Tabela
+        if (new URLSearchParams(location.search).has("zalogowano")) history.replaceState(null, "", "/");  // powrót z portalu
         // wyniki pojawiają się dopiero po wyszukaniu albo „Znajdź najbliższe”
       });
     })();

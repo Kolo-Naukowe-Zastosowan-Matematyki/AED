@@ -5,6 +5,8 @@ Jedyna zmiana względem portalu to zbiór „System Ewidencji Zasobów AED”:
                              pobieranymi z serwisu AED (serwis_client.py),
   * /api/search            – wyniki z dane.gov.pl z dopisanym zbiorem AED, gdy fraza dotyczy AED,
   * POST .../comments      – „Zgłoś uwagi” do zbioru AED trafia do kolejki dostawcy (uwagi.py),
+  * /api/auth/...          – logowanie kontami demo (konta.py): oryginalny formularz „Zaloguj się” portalu,
+                             z którego serwis AED bierze rolę (GET /api/auth/user),
   * /api, /cms, /media ... – odczyt z publicznych usług dane.gov.pl (portal_proxy.py); zapisy są blokowane,
   * pozostałe ścieżki      – zbudowany frontend portalu (portal/frontend/dist).
 Tylko biblioteka standardowa Pythona.
@@ -22,6 +24,7 @@ from pathlib import Path
 from common.http import BaseHandler
 from portal.backend import portal_proxy
 from portal.backend.aed_dataset import AedDataset
+from portal.backend.konta import Konta
 from portal.backend.serwis_client import SerwisClient
 from portal.backend.uwagi import Comments
 
@@ -31,6 +34,8 @@ log = logging.getLogger("aed.portal")
 class PortalHandler(BaseHandler):
     dataset: AedDataset = None
     comments: Comments = None
+    konta: Konta = None
+    serwis_url: str = ""
     dist: Path = None
     server_version = "aed-portal/0.3"
 
@@ -70,6 +75,8 @@ class PortalHandler(BaseHandler):
             return
         if method == "POST" and self._aed_comment(url.path):
             return
+        if self._auth(method, url.path):
+            return
         target = portal_proxy.match(url.path)
         if target and method != "GET":
             return self._blocked_write(url.path)
@@ -81,6 +88,60 @@ class PortalHandler(BaseHandler):
         if method == "GET":
             return self._static(url.path)
         self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
+
+    AUTH = re.compile(r"/api(?:/1\.4)?/auth/(.+?)/?")
+    TOKEN_COOKIES = ("local_apiauthtoken", "apiauthtoken")
+
+    def _token(self) -> str:
+        auth = self.headers.get("Authorization") or ""
+        if auth.lower().startswith("bearer "):
+            return auth[7:].strip()
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name in self.TOKEN_COOKIES and value:
+                return value
+        return ""
+
+    def _api_json(self, body: dict, status=HTTPStatus.OK):
+        self._send(json.dumps(body, ensure_ascii=False).encode(), "application/vnd.api+json; charset=utf-8", status,
+                   {"Cache-Control": "no-store"})
+
+    def _auth(self, method: str, path: str) -> bool:
+        """Logowanie w makiecie: konta demo (konta.py) zamiast produkcyjnych kont dane.gov.pl."""
+        m = self.AUTH.fullmatch(path)
+        if not m:
+            return False
+        what = m.group(1)
+        if method == "POST" and what == "login":
+            try:
+                attrs = ((json.loads(self._body(16 * 1024) or b"{}").get("data") or {}).get("attributes") or {})
+            except ValueError:
+                attrs = {}
+            token = self.konta.zaloguj(attrs.get("email", ""), attrs.get("password", ""))
+            if not token:
+                self._api_json({"errors": [{"status": "401", "code": "401_unauthorized", "title": "Błąd logowania",
+                                            "detail": "Nieprawidłowy e-mail lub hasło. Konta demo są w README."}]},
+                               HTTPStatus.UNAUTHORIZED)
+                return True
+            email, konto = self.konta.konto(token)
+            log.info("Zalogowano w makiecie portalu: %s", email)
+            self._api_json(self.konta.uzytkownik(email, konto, token))
+            return True
+        if method == "POST" and what == "logout":
+            self.konta.wyloguj(self._token())
+            self._api_json({"jsonapi": {"version": "1.4"}, "data": None})
+            return True
+        if method == "GET":
+            hit = self.konta.konto(self._token())
+            if not hit:
+                self._api_json({"errors": [{"status": "401", "code": "401_unauthorized",
+                                            "title": "Wymagane logowanie"}]}, HTTPStatus.UNAUTHORIZED)
+            elif what == "user":
+                self._api_json(self.konta.uzytkownik(*hit))
+            else:  # panel użytkownika i pozostałe zasoby konta: puste w makiecie
+                self._api_json({"jsonapi": {"version": "1.4"}, "data": [], "meta": {"count": 0, "aggregations": {}}})
+            return True
+        return False  # rejestracja, zmiana hasła itp.: zablokowane jak dotąd (_blocked_write)
 
     AED_COMMENTS = re.compile(r"/api(?:/1\.4)?/(datasets|resources)/([^/]+)/comments/?")
 
@@ -145,12 +206,27 @@ class PortalHandler(BaseHandler):
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
         cache = "no-cache" if target.name == "index.html" else "public, max-age=31536000, immutable"
-        self._send(target.read_bytes(), ctype, extra={"Cache-Control": cache})
+        data = target.read_bytes()
+        if target.name == "index.html" and self.serwis_url:
+            data = data.replace(b"</head>", self._powrot_js() + b"</head>", 1)
+        self._send(data, ctype, extra={"Cache-Control": cache})
+
+    POWROT = "/pl/aed-powrot"  # ?redirect= formularza logowania portalu: po zalogowaniu wracamy do serwisu AED
+
+    def _powrot_js(self) -> bytes:
+        cel = json.dumps(self.serwis_url.rstrip("/") + "/?zalogowano=1")
+        return (f"<script>(function(){{var p={json.dumps(self.POWROT)},c={cel};"
+                "function s(){if(location.pathname.indexOf(p)===0)location.replace(c);}"
+                "['pushState','replaceState'].forEach(function(k){var o=history[k];"
+                "history[k]=function(){var r=o.apply(this,arguments);s();return r;};});"
+                "addEventListener('popstate',s);s();})();</script>").encode()
 
 
 def setup(base: Path, cfg: dict, serwis_api: str, serwis_url: str):
     """Przygotowuje makietę portalu i zwraca klasę obsługi żądań."""
     PortalHandler.dataset = AedDataset(cfg, SerwisClient(serwis_api), serwis_url)
     PortalHandler.comments = Comments(base)
+    PortalHandler.konta = Konta()
+    PortalHandler.serwis_url = serwis_url
     PortalHandler.dist = (Path(__file__).resolve().parents[1] / "frontend" / "dist")
     return PortalHandler

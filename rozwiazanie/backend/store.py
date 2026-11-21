@@ -106,6 +106,8 @@ class Store:
                 self.by_source["danegov"] = recs
                 self.status["danegov"] = {"stan": "gotowe", "rekordy": len(recs), "pobrano": fetched,
                                           "raport": report}
+                if geo.blokada:  # widoczne w /aed-api/sources i w run.py --raport
+                    self.status["danegov"]["geokodowanie"] = f"GUGiK odmówił: {geo.blokada}"
                 self._rebuild()
         except Exception as exc:  # noqa: BLE001
             log.warning("dane.gov.pl: błąd pobierania: %s", exc)

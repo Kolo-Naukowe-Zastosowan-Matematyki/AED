@@ -42,6 +42,8 @@ if __name__ == "__main__":
         store._load_cache("danegov")
     st = store.status.get("danegov", {})
     print(f"dane.gov.pl: {st.get('stan')} – {st.get('rekordy', 0)} rekordów")
+    if st.get("geokodowanie"):
+        print(st["geokodowanie"])
     if args.raport:
         print(json.dumps(st.get("raport", []), ensure_ascii=False, indent=1))
     if args.diagnoza:

@@ -174,6 +174,23 @@ class OdwrotneTest(unittest.TestCase):
             self.assertEqual(geo.odwrotne(52.326697, 21.107557)["city"], "Marki")
             self.assertEqual(len(asked), 4)            # pamięć podręczna
 
+    def test_blocked_service_is_not_cached_as_empty(self):
+        import io as _io
+        import tempfile
+        from unittest import mock
+        from rozwiazanie.scraping import geokod
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(geokod, "PAUZA_S", 0), \
+                mock.patch.object(geokod.urllib.request, "urlopen",
+                                  return_value=_io.BytesIO(b'{"notice":"blocked for abuse"}')) as op:
+            op.return_value.__enter__ = lambda self: self
+            op.return_value.__exit__ = lambda self, *a: None
+            geo = geokod.Geokoder(Path(tmp) / "g.json")
+            self.assertIsNone(geo.odwrotne(52.326697, 21.107557))
+            self.assertFalse(geo.online)
+            self.assertEqual(geo.blokada, "blocked for abuse")
+            self.assertEqual(geo.cache, {})          # przy następnym uruchomieniu zapytamy ponownie
+            self.assertEqual(op.call_count, 1)       # po blokadzie nie pytamy dalej
+
     def test_coordinates_only_get_street_from_reverse(self):
         class Rev(FakeGeo):
             def odwrotne(self, lat, lon):

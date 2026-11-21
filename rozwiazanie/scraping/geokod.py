@@ -23,7 +23,7 @@ from rozwiazanie.scraping.standard import TERYT_WOJ, do_puwg1992, liczba, w_pols
 
 log = logging.getLogger("aed.geokod")
 UUG = "https://services.gugik.gov.pl/uug/"
-PAUZA_S = 0.15
+PAUZA_S = 0.5  # odstęp między zapytaniami; zbyt częste kończą się blokadą „blocked for abuse”
 
 
 def _pierwszy_wynik(body: dict) -> dict | None:
@@ -65,6 +65,7 @@ class Geokoder:
         self.lock = threading.Lock()
         self.pytania = 0
         self.wariant = 0  # wariant zapytania odwrotnego, który ostatnio zadziałał
+        self.blokada = ""  # komunikat GUGiK, gdy odmówił obsługi (np. blokada za zbyt wiele zapytań)
         try:
             self.cache: dict = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
         except (OSError, ValueError):
@@ -83,6 +84,12 @@ class Geokoder:
         finally:
             time.sleep(PAUZA_S)
         self.pytania += 1
+        if not isinstance(body, dict) or ("results" not in body and body.get("notice")):
+            # np. {"notice": "blocked for abuse"}: to nie jest odpowiedź „brak adresu”, więc nic nie zapamiętujemy
+            self.blokada = str(body.get("notice") if isinstance(body, dict) else body)[:200]
+            log.warning("Geokoder GUGiK odmówił (%s), wyłączam do końca przebiegu", self.blokada)
+            self.online = False
+            return None
         return body
 
     def _zapytaj(self, key: str, params: dict) -> dict | None:
@@ -111,7 +118,7 @@ class Geokoder:
         """Najbliższy punkt adresowy. Kolejność osi w POINT bywa różnie rozumiana (EPSG:4326 lat/lon albo lon/lat,
         EPSG:2180 x/y), więc pytamy w kolejnych wariantach; zły wariant wypada poza Polskę i nie daje wyniku.
         Wariant, który zadziałał, zapamiętujemy, żeby kolejne punkty pytać jednym zapytaniem."""
-        key = f"r2:{lat:.5f},{lon:.5f}"
+        key = f"r3:{lat:.5f},{lon:.5f}"  # r3: odpowiedzi z blokady GUGiK z wersji r2 były zapisane jako puste
         with self.lock:
             if key in self.cache:
                 return self.cache[key] or None

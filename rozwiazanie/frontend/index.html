@@ -129,6 +129,11 @@
     .filter-group, .filter-group__body, .advanced label { min-width: 0; }
     .advanced select.is-set { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
     .lock { justify-self: start; padding: 1px 6px; background: #fff1d6; color: #7a4b00; font-size: 11px; font-weight: 700; }
+    .result__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+    .tag { padding: 3px 8px; border-radius: 2px; font-size: 12px; font-weight: 700; background: #eef0f2; color: #3d4954; }
+    .tag--ok { background: #e6f3eb; color: #176239; }
+    .tag--warn { background: #fff1d6; color: #7a4b00; }
+    .tag--bad { background: #fde7e4; color: #9b1c0c; }
     .check { display: flex !important; align-items: center; gap: 9px !important; align-self: end; min-height: 42px; }
     .check input { width: 18px; height: 18px; accent-color: var(--blue); }
     .results-wrap { padding: 28px 16px 48px; }
@@ -615,6 +620,25 @@
           appendText(addressLine, "span", "result__distance", ` · ${distance} od Ciebie (ok. ${minutes} min pieszo)`);
         }
         if (item.opis_lokalizacji) appendText(card, "p", "result__description", item.opis_lokalizacji);
+        const st = item.standard || {};
+        const tags = [];
+        if (st.availability_type === "24/7") tags.push(["Dostępny 24/7", "ok"]);
+        else if (st.availability_type === "GODZINY_OTWARCIA") tags.push(["W godzinach otwarcia", "warn"]);
+        else if (st.availability_type === "TYLKO_PERSONEL") tags.push(["Tylko personel", "bad"]);
+        if (st.is_locked === false) tags.push(["Bez klucza i kodu", "ok"]);
+        if (st.is_locked === true) tags.push(["Wymaga klucza lub kodu", "warn"]);
+        if (st.is_indoor === true) tags.push(["Wewnątrz budynku", ""]);
+        if (st.is_indoor === false) tags.push(["Na zewnątrz", ""]);
+        if (st.operational_status === "SPRAWNY") tags.push(["Sprawny", "ok"]);
+        if (st.operational_status === "NIESPRAWNY") tags.push(["Niesprawny", "bad"]);
+        if (st.operational_status === "W_SERWISIE") tags.push(["W serwisie", "warn"]);
+        if (st.possible_duplicate === true) tags.push(["Możliwy duplikat", "warn"]);
+        if (tags.length) {
+          const row = document.createElement("div");
+          row.className = "result__chips";
+          tags.forEach(([label, kind]) => appendText(row, "span", `tag${kind ? ` tag--${kind}` : ""}`, label));
+          card.append(row);
+        }
         const metadata = [
           item.godziny_dostepnosci ? `Godziny: ${item.godziny_dostepnosci}` : "",
           item.dysponent ? `Dysponent: ${item.dysponent}` : "",

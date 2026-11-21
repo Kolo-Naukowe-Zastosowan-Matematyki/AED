@@ -17,7 +17,6 @@
   "zbior_aed": {
     "_opis": "Zbiór /pl/dataset/aed,system-ewidencji-zasobow-aed w makiecie portalu. Adresy względne prowadzą do serwisu AED. Puste pola = wartości domyślne z portal/backend/aed_dataset.py.",
     "rejestr_url": "/",
-    "mapa_url": "/mapa",
     "zrodlo_url": "",
     "dostawca": {
       "id": "",

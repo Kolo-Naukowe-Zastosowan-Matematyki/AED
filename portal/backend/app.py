@@ -44,7 +44,7 @@ class PortalHandler(BaseHandler):
         if not isinstance(body, bytes):
             body = json.dumps(body, ensure_ascii=False).encode()
             ctype += "; charset=utf-8"
-        elif not ctype.startswith(("application/ld+json", "application/rdf+xml")):  # pliki: CSV, GeoJSON, mapa HTML
+        elif not ctype.startswith(("application/ld+json", "application/rdf+xml")):  # pliki: CSV, GeoJSON
             extra["Content-Disposition"] = f'attachment; filename="{name[0] if name else path.rsplit("/", 1)[-1]}"'
         self._send(body, ctype, status, extra)
         return True

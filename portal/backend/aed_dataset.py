@@ -6,10 +6,8 @@ Frontend portalu pokazuje ten zbiór swoimi własnymi komponentami, tak jak każ
     Warunki wykorzystywania / Historia zbioru, „Wyświetl dane poprzez API”),
   * na stronach zasobów /pl/dataset/aed,.../resource/<id>.
 
-Zasoby zbioru (w tej kolejności):
-  1. Rejestr AED   – plik CSV/GeoJSON z widokiem tabelarycznym (dane z rejestru),
-  2. Mapa AED      – plik HTML z interaktywną mapą do pobrania (bez widoku tabelarycznego).
-Dane zasobów pochodzą z serwisu AED (instancja B), do którego prowadzą też linki „Przejdź”.
+Zasób zbioru: Rejestr AED – plik CSV/GeoJSON z widokiem tabelarycznym (dane z rejestru).
+Dane pochodzą z serwisu AED (instancja B), do którego prowadzi też link „Przejdź”.
 Ustawienia: config.json, sekcja „zbior_aed”.
 """
 from __future__ import annotations
@@ -41,7 +39,6 @@ DEFAULTS = {
         "Dane są łączone ze zbiorów publikowanych w dane.gov.pl przez instytucje, samorządy i podmioty lecznicze.</p>"
         "<p>Błąd w danych można zgłosić przez „Zgłoś uwagi do zbioru”. Uwaga trafia do dostawcy zbioru, "
         "który poprawia dane u źródła.</p>"
-        "<p>W skład zbioru wchodzą: rejestr AED oraz interaktywna mapa AED.</p>"
     ),
     "slowa_kluczowe": ["AED", "defibrylator", "zdrowie", "pierwsza pomoc", "ratownictwo",
                        "System Ewidencji Zasobów AED"],
@@ -53,7 +50,6 @@ DEFAULTS = {
     "udostepniono": "2026-11-21T12:00:00",
     # Strony serwisu AED (instancja B). Adres względny = względem serwis_url.
     "rejestr_url": "/",
-    "mapa_url": "/mapa",
     "wyswietlenia": 0,
     "pobrania": 0,
 }
@@ -190,7 +186,6 @@ class AedDataset:
         if self.c["rejestr_url"]:
             url = self._site(self.c["rejestr_url"])
             rejestr_desc += f' Rejestr online: <a href="{url}">{url}</a>.'
-        mapa_url = self._site(self.c["mapa_url"])
         return [
             {"id": "aed-rejestr", "slug": "rejestr-aed", "title": "Rejestr AED", "media_type": "file",
              "format": "csv", "openness_score": 3, "visualization_types": ["table"], "tabular": True,
@@ -203,16 +198,6 @@ class AedDataset:
              ],
              "page_url": self._site(self.c["rejestr_url"]),
              "description": rejestr_desc},
-            {"id": "aed-mapa", "slug": "mapa-aed", "title": "Mapa AED", "media_type": "file",
-             "format": "html", "openness_score": 1, "visualization_types": [], "tabular": False,
-             "link": f"{api}/resources/aed-mapa/mapa_aed.html",
-             "files": [{"download_url": f"{api}/resources/aed-mapa/mapa_aed.html",
-                        "file_size": len(self.map_html(origin)), "format": "html", "openness_score": 1}],
-             "page_url": mapa_url,
-             "description": ("Interaktywna mapa wszystkich AED z ewidencji w jednym pliku HTML. Po pobraniu otwiera się "
-                             "w przeglądarce: kliknięcie punktu pokazuje opis miejsca, dostęp i godziny, a przycisk "
-                             "„Moja lokalizacja” pokazuje, gdzie jesteś. "
-                             f'Mapa online: <a href="{mapa_url}">{mapa_url}</a>.')},
         ]
 
     def _resource(self, d: dict, origin: str) -> dict:
@@ -297,8 +282,7 @@ class AedDataset:
                     "attributes": {"action": "INSERT", "table_name": "resource", "row_id": rid,
                                    "change_timestamp": created, "message": None,
                                    "new_value": {"title": title, "slug": slug, "dataset_id": f"{DATASET_ID},{SLUG}"}}}
-                   for rid, title, slug in (("aed-mapa", "Mapa AED", "mapa-aed"),
-                                            ("aed-rejestr", "Rejestr AED", "rejestr-aed"))]
+                   for rid, title, slug in (("aed-rejestr", "Rejestr AED", "rejestr-aed"),)]
         entries.append({"id": "h-ds", "type": "history",
                         "attributes": {"action": "INSERT", "table_name": "dataset", "row_id": DATASET_ID,
                                        "change_timestamp": created, "message": None,
@@ -453,11 +437,6 @@ class AedDataset:
                           "properties": {f: d.get(f) for f, _, _ in TABLE if f not in ("szerokosc", "dlugosc")}})
         return json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False).encode()
 
-    # ================================================================ interaktywna mapa (plik HTML)
-    def map_html(self, origin: str) -> bytes:
-        """Plik „Mapa AED” do pobrania: generuje go serwis AED."""
-        return self.serwis.map_html() if self.serwis is not None else b""
-
     # ================================================================ wyszukiwarka portalu
     def search_item(self, origin: str) -> dict:
         ds = self.dataset(origin)["data"]
@@ -543,8 +522,6 @@ class AedDataset:
                 return 200, "text/csv; charset=utf-8", self.register_csv()
             if sub == "/rejestr_aed.geojson" and d["id"] == "aed-rejestr":
                 return 200, "application/geo+json", self.register_geojson()
-            if sub == "/mapa_aed.html" and d["id"] == "aed-mapa":
-                return 200, "text/html; charset=utf-8", self.map_html(origin)
             return 200, "application/vnd.api+json", self.empty_list()  # /charts, /comments itp.
         if path == "/histories" and query.get("row_id") and _ident(query["row_id"]) == DATASET_ID:
             return 200, "application/vnd.api+json", self.history(int(query.get("page", 1) or 1))

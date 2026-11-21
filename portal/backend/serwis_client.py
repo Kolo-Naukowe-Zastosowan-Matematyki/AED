@@ -40,6 +40,3 @@ class SerwisClient:
     def register(self) -> dict:
         body = self._get("/rejestr.json")
         return json.loads(body) if body else {"pobrano": None, "rekordy": []}
-
-    def map_html(self) -> bytes:
-        return self._get("/mapa_aed.html", timeout=60) or b""

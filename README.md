@@ -73,7 +73,6 @@ aed-prototyp/
 | Zasób | Typ | Strona zasobu | „Przejdź” prowadzi do |
 | --- | --- | --- | --- |
 | Rejestr AED | plik CSV, GeoJSON | widok tabelaryczny | rejestru w serwisie AED (`/`) |
-| Mapa AED | plik HTML | „Ten zasób nie posiada widoku tabelarycznego”, do pobrania `mapa_aed.html` | mapy w serwisie AED (`/mapa`) |
 
 Ikony „Pobierz metadane” zwracają metadane jak w portalu: CSV (wiersz na zasób, kolumny zbioru, dostawcy i zasobu)
 oraz RDF/XML w DCAT-AP.
@@ -82,7 +81,7 @@ Makieta tylko **czyta** z produkcyjnego dane.gov.pl. Zapisy (uwagi do innych zbi
 logowanie) dostają lokalną odpowiedź demo i nie wychodzą do dane.gov.pl. „Zgłoś uwagi” do zbioru AED trafia do
 kolejki dostawcy w `data/uwagi`.
 
-Ustawienia zbioru: `config.json` → `zbior_aed`. Adresy względne (`rejestr_url`, `mapa_url`) prowadzą do
+Ustawienia zbioru: `config.json` → `zbior_aed`. Adres względny `rejestr_url` prowadzi do
 serwisu AED, a jego publiczny adres można ustawić w `serwis.url`.
 
 ## B. Serwis AED

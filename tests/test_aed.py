@@ -107,7 +107,7 @@ class AedDatasetTest(unittest.TestCase):
     def test_resources(self):
         status, _, res = self.ds.handle("/datasets/aed,system-ewidencji-zasobow-aed/resources", {}, self.origin)
         self.assertEqual(status, 200)
-        self.assertEqual([r["attributes"]["title"] for r in res["data"]], ["Rejestr AED", "Mapa AED"])
+        self.assertEqual([r["attributes"]["title"] for r in res["data"]], ["Rejestr AED"])
         status, _, tab = self.ds.handle("/resources/aed-rejestr/data", {"page": "1"}, self.origin)
         self.assertEqual(status, 200)
         self.assertIn("col1", tab["meta"]["headers_map"])

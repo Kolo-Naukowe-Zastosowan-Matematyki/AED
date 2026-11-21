@@ -1,0 +1,182 @@
+{
+ "_opis": "Tabela wzorcowego zakresu danych AED (miejsce na wsad, odpowiednik DGA_COLUMNS w mcod/resources/dga_constants.py). 20 kolumn z eksportu Natalii (natka_branch, export_xlsx) + 2 kolumny kontaktowe. 'chroniona': true = kolumna nie trafia na portal dane.gov.pl ani do publicznego API i eksportów; widzi ją tylko administrator. Ta sama tabela jest w mcod_wsad/aed_constants.py (test pilnuje zgodności).",
+ "wersja": "2.0",
+ "kolumny": [
+  {
+   "pole": "numer_seryjny_aed",
+   "nazwa": "Numer seryjny AED",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": true,
+   "opis": "Numer seryjny urządzenia od dysponenta; służy do wykrywania duplikatów"
+  },
+  {
+   "pole": "szerokosc_geograficzna",
+   "nazwa": "Szerokość geograficzna (b)",
+   "typ": "number",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "WGS84, stopnie dziesiętne, kropka dziesiętna; rola kolumny na portalu: b"
+  },
+  {
+   "pole": "dlugosc_geograficzna",
+   "nazwa": "Długość geograficzna (l)",
+   "typ": "number",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "WGS84, stopnie dziesiętne, kropka dziesiętna; rola kolumny na portalu: l"
+  },
+  {
+   "pole": "wojewodztwo",
+   "nazwa": "Województwo",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Nazwa województwa małymi literami"
+  },
+  {
+   "pole": "miejscowosc",
+   "nazwa": "Miejscowość",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Nazwa miejscowości"
+  },
+  {
+   "pole": "kod_pocztowy",
+   "nazwa": "Kod pocztowy",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Format xx-xxx (reguła PNA portalu)"
+  },
+  {
+   "pole": "adres_uliczny",
+   "nazwa": "Adres",
+   "typ": "string",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "Ulica i numer budynku"
+  },
+  {
+   "pole": "wewnatrz_budynku",
+   "nazwa": "Wewnątrz budynku",
+   "typ": "bool",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "True / False (reguła bool portalu)"
+  },
+  {
+   "pole": "nazwa_budynku",
+   "nazwa": "Nazwa obiektu",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Nazwa budynku lub miejsca; rola kolumny na portalu: label"
+  },
+  {
+   "pole": "dokladna_lokalizacja",
+   "nazwa": "Dokładna lokalizacja",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Gdzie wisi urządzenie, np. hol przy recepcji, piętro"
+  },
+  {
+   "pole": "typ_dostepnosci",
+   "nazwa": "Typ dostępności",
+   "typ": "string",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "Słownik: PUBLICZNY, GODZINY_OTWARCIA, TYLKO_PERSONEL, PRYWATNY, NIEZNANY"
+  },
+  {
+   "pole": "godziny_dostepnosci",
+   "nazwa": "Godziny dostępności",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Format opening_hours, np. 24/7 albo Mo-Fr 08:00-16:00"
+  },
+  {
+   "pole": "czy_zamkniety",
+   "nazwa": "Szafka zamknięta",
+   "typ": "bool",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "True / False: czy szafka wymaga kodu lub klucza"
+  },
+  {
+   "pole": "status_operacyjny",
+   "nazwa": "Status operacyjny",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "Słownik: SPRAWNY, W_SERWISIE, WYCOFANY, NIEZNANY"
+  },
+  {
+   "pole": "nazwa_operatora",
+   "nazwa": "Dysponent",
+   "typ": "string",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "Instytucja odpowiedzialna za urządzenie i dane"
+  },
+  {
+   "pole": "data_waznosci_elektrod",
+   "nazwa": "Data ważności elektrod",
+   "typ": "date",
+   "wymagana": false,
+   "chroniona": true,
+   "opis": "yyyy-mm-dd"
+  },
+  {
+   "pole": "data_waznosci_baterii",
+   "nazwa": "Data ważności baterii",
+   "typ": "date",
+   "wymagana": false,
+   "chroniona": true,
+   "opis": "yyyy-mm-dd"
+  },
+  {
+   "pole": "data_aktualizacji_rekordu",
+   "nazwa": "Data aktualizacji rekordu",
+   "typ": "date",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "yyyy-mm-dd"
+  },
+  {
+   "pole": "zrodlo_danych",
+   "nazwa": "Źródło danych",
+   "typ": "string",
+   "wymagana": true,
+   "chroniona": false,
+   "opis": "Adres zasobu na dane.gov.pl, z którego pochodzi rekord"
+  },
+  {
+   "pole": "mozliwy_duplikat",
+   "nazwa": "Możliwy duplikat",
+   "typ": "bool",
+   "wymagana": false,
+   "chroniona": false,
+   "opis": "True, gdy ten sam numer seryjny albo inny AED w odległości do 15 m"
+  },
+  {
+   "pole": "osoba_kontaktowa",
+   "nazwa": "Osoba kontaktowa",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": true,
+   "opis": "Dane osobowe (RODO), tylko dla administratora"
+  },
+  {
+   "pole": "telefon_kontaktowy",
+   "nazwa": "Telefon kontaktowy",
+   "typ": "string",
+   "wymagana": false,
+   "chroniona": true,
+   "opis": "9 cyfr bez spacji (reguła phone portalu); dane osobowe, tylko dla administratora"
+  }
+ ]
+}

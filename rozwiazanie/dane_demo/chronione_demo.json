@@ -1,0 +1,8 @@
+{
+  "_opis": "DANE PRZYKŁADOWE, ZMYŚLONE, tylko do pokazu widoku administratora. Prawdziwe dane chronione dostawców trafiają do data/chronione/chronione.json (poza repozytorium). Klucze kolumn jak w common/aed_columns.json.",
+  "rekordy": {
+    "dgp-62093-1": {"numer_seryjny_aed": "DEMO-0001", "data_waznosci_elektrod": "2027-03-31", "data_waznosci_baterii": "2029-06-30", "osoba_kontaktowa": "Jan Przykładowy (dane demo)", "telefon_kontaktowy": "000000000"},
+    "dgp-62093-2": {"numer_seryjny_aed": "DEMO-0002", "data_waznosci_elektrod": "2026-12-31", "data_waznosci_baterii": "2028-01-31", "osoba_kontaktowa": "Anna Przykładowa (dane demo)", "telefon_kontaktowy": "000000000"},
+    "dgp-62093-3": {"numer_seryjny_aed": "DEMO-0003", "data_waznosci_elektrod": "2028-08-31", "data_waznosci_baterii": "2030-04-30", "osoba_kontaktowa": "", "telefon_kontaktowy": ""}
+  }
+}

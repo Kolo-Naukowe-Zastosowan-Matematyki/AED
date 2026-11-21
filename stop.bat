@@ -1,5 +1,5 @@
 @echo off
-rem Mapa AED: zatrzymanie serwera uruchomionego z tego folderu.
+rem Prototyp AED: zatrzymanie serwera uruchomionego z tego folderu.
 setlocal
 cd /d "%~dp0"
 if not exist "data\server.pid" (

@@ -133,4 +133,5 @@ dodaje dostawca w panelu, a zasoby wskazują pliki i strony serwisu AED.
 ## Licencje komponentów
 
 - Frontend portalu dane.gov.pl: MIT. Leaflet 1.9.4: BSD-2-Clause (`rozwiazanie/frontend/vendor/leaflet/LICENSE`).
+- Godło RP w nagłówku serwisu: wzór z Wikimedia Commons, źródło i zasady użycia w `rozwiazanie/frontend/vendor/godlo/ZRODLO.md`.
 - Podkład mapy (kafelki, jak w portalu dane.gov.pl): © współtwórcy OpenStreetMap.

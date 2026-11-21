@@ -30,8 +30,12 @@ __LEAFLET_CSS__
   .topbar { flex: none; height: 58px; background: #fff; border-bottom: 1px solid #d5d9dc; }
   .topbar__inner { width: min(1120px, calc(100% - 32px)); height: 100%; margin: auto;
                    display: flex; align-items: center; gap: 18px; }
-  .brand-mark { width: 44px; height: 42px; display: grid; place-items: center; background: #d40024; color: #fff;
-                font-weight: 800; letter-spacing: .03em; }
+  /* godło na czerwonym pasie od lewej krawędzi ekranu, jak w serwisach administracji (np. Rejestry e-Zdrowia) */
+  .topbar { overflow: hidden; }
+  .brand-mark { position: relative; flex: none; align-self: stretch; width: 64px; margin: 6px 4px 6px 0;
+    display: grid; place-items: center end; background: #dc143c; }
+  .brand-mark::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 100vw; background: #dc143c; }
+  .brand-mark img { display: block; height: 34px; width: auto; margin-right: 12px; }
   .brand { color: #20252a; font-family: Georgia, serif; font-size: 21px; text-decoration: none; }
   .topbar__links { margin-left: auto; display: flex; gap: 26px; font-size: 14px; font-weight: 650; }
   .topbar__links a { text-decoration: none; }
@@ -60,7 +64,7 @@ __LEAFLET_CSS__
 <body>
 <header class="topbar">
   <div class="topbar__inner">
-    <div class="brand-mark" aria-hidden="true">AED</div>
+    <div class="brand-mark"><img src="__SITE__/vendor/godlo/godlo.svg" alt="Godło Rzeczypospolitej Polskiej"></div>
     <a class="brand" href="__SITE__/">Rejestr AED</a>
     <nav class="topbar__links" aria-label="Nawigacja">
       <a href="__SITE__/mapa" aria-current="page">Mapa AED</a>

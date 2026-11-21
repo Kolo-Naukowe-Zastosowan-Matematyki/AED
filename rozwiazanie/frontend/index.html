@@ -60,7 +60,14 @@
     .fields.is-admin { grid-template-columns: 1fr 1.3fr 178px; }
     .fields input[hidden] { display: none; }
     .suggest { position: relative; min-width: 0; display: grid; }
-    .suggest input { width: 100%; }
+    .suggest input { width: 100%; padding-right: 48px; }
+    .place-locate { position: absolute; z-index: 2; top: 0; right: 0; width: 46px; height: 100%; display: grid; place-items: center;
+      padding: 0; border: 0; background: none; color: var(--blue); cursor: pointer; }
+    .place-locate svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .place-locate:hover { color: #ef4b13; }
+    .place-locate:focus-visible { outline: 3px solid #ffc400; outline-offset: -3px; }
+    .place-locate.is-busy { color: #d88a00; }
+    .place-locate.is-on { color: #ef4b13; }
     .intro a { color: #fff; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
     .intro a:hover { text-decoration-thickness: 2px; }
     .suggest__list {
@@ -291,9 +298,12 @@
             <div class="fields" id="fields">
               <input id="query" name="q" type="search" placeholder="Nazwa obiektu lub numer AED" aria-label="Nazwa obiektu lub numer AED (administrator)" hidden>
               <div class="suggest">
-                <input id="place" name="miejsce" type="search" placeholder="Adres, miejscowość lub lokalizacja"
+                <input id="place" name="miejsce" type="search" value="Polska" placeholder="Adres, miejscowość, gmina, powiat lub województwo"
                        aria-label="Adres, miejscowość lub lokalizacja" role="combobox" aria-autocomplete="list"
                        aria-expanded="false" aria-controls="place-list">
+                <button class="place-locate" id="place-locate" type="button" title="Użyj mojej lokalizacji" aria-label="Użyj mojej lokalizacji">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0 1 13 0c0 4.9-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>
+                </button>
                 <ul class="suggest__list" id="place-list" role="listbox" hidden></ul>
               </div>
               <button class="search-button" type="submit">
@@ -795,11 +805,18 @@
       function showResults() {
         resultsWrap.hidden = false;
       }
+      // pole miejsca: „Polska” (cały rejestr), nazwa obszaru albo „Moja lokalizacja” (pinezka: wyniki od najbliższego)
+      const MY_PLACE = "Moja lokalizacja";
+      let myPos = null;
+      function placeParams() {
+        const place = document.getElementById("place").value.trim();
+        if (place === MY_PLACE && myPos) return { lat: myPos[0], lon: myPos[1] };
+        return place && place.toLowerCase() !== "polska" ? { miejsce: place } : {};
+      }
       function currentParams() {
         const params = new URLSearchParams();
-        const place = document.getElementById("place").value.trim();
         const query = document.getElementById("query").value.trim();
-        if (place) params.set("miejsce", place);
+        Object.entries(placeParams()).forEach(([k, v]) => params.set(k, String(v)));
         if (query && role === "admin") params.set("q", query);
         Object.entries(activeFilters()).forEach(([k, v]) => params.set(k, v));
         return params;
@@ -816,7 +833,8 @@
         title.textContent = "Wyniki wyszukiwania";
         const params = currentParams();
         mode = { typ: "szukaj", params: params.toString() };
-        if (tableSort.pole === "_odl") tableSort = { pole: "city", dir: 1 };
+        if (params.has("lat")) tableSort = { pole: "_odl", dir: 1 };  // „Moja lokalizacja”: od najbliższego
+        else if (tableSort.pole === "_odl") tableSort = { pole: "city", dir: 1 };
         allItems = null;
         params.set("limit", String(pageSize));
         params.set("offset", String(offset));
@@ -1180,6 +1198,26 @@
         }, { enableHighAccuracy: true, timeout: 8000 });
       });
 
+      const placeLocate = document.getElementById("place-locate");
+      placeLocate.addEventListener("click", () => {
+        if (!navigator.geolocation) { placeLocate.title = "Przeglądarka nie udostępnia lokalizacji"; return; }
+        placeLocate.classList.add("is-busy");
+        navigator.geolocation.getCurrentPosition((pos) => {
+          placeLocate.classList.remove("is-busy");
+          myPos = [pos.coords.latitude, pos.coords.longitude];
+          placeInput.value = MY_PLACE;
+          placeLocate.classList.add("is-on");
+          closeSuggest();
+          offset = 0;
+          search();
+        }, () => {
+          placeLocate.classList.remove("is-busy");
+          placeLocate.title = "Nie udało się ustalić lokalizacji (brak zgody przeglądarki?)";
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+      });
+      placeInput.addEventListener("input", () => placeLocate.classList.toggle("is-on", placeInput.value.trim() === MY_PLACE && !!myPos));
+      placeInput.addEventListener("focus", () => { if (placeInput.value === "Polska") placeInput.select(); });
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         clearTimeout(suggestTimer);  // spóźnione podpowiedzi nie mogą zasłonić wyników
@@ -1195,7 +1233,8 @@
         document.getElementById("advanced-fields").classList.toggle("is-open", open);
       });
       document.getElementById("clear").addEventListener("click", () => {
-        form.reset();
+        form.reset();  // pole miejsca wraca do „Polska”
+        placeLocate.classList.remove("is-on");
         Object.keys(state).forEach((k) => delete state[k]);
         Object.keys(quickState).forEach((k) => delete quickState[k]);
         closeSuggest();

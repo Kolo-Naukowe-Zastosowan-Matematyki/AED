@@ -183,6 +183,14 @@ class Store:
         filtry = filtry or {}
         now = datetime.now()
         with self.lock:
+            # fraza równa nazwie miejscowości, województwa albo kodowi pocztowemu (np. wybrana podpowiedź „Kraków”)
+            # -> dokładne dopasowanie tego pola, żeby „Kraków” nie łapał „ul. Krakowska” w innych miastach
+            exact_field = None
+            if location:
+                for field in ("city", "region", "postal_code"):
+                    if any(self._search_text(str(st.get(field) or "")) == location for st in self.std):
+                        exact_field = field
+                        break
             matches = []
             for idx, record in enumerate(self.records):
                 if filtry:
@@ -214,7 +222,10 @@ class Store:
                     str(record.extra.get("zbior", "")), st.get("city", ""), st.get("region", ""),
                     st.get("postal_code", ""), st.get("street_address", ""),
                 )))
-                if location and location not in place_text:
+                if exact_field:
+                    if self._search_text(str(st.get(exact_field) or "")) != location:
+                        continue
+                elif location and location not in place_text:
                     continue
                 matches.append(idx)
 

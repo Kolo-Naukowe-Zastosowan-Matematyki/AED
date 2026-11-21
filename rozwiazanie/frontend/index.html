@@ -118,6 +118,8 @@
       display: none; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
       gap: 12px; padding-top: 16px; margin-top: 16px; border-top: 1px solid #e1e4e6; align-items: start;
     }
+    /* rozwinięte kategorie w jednym rzędzie mają wspólną wysokość (zwinięte zostają niskie) */
+    .filter-group[open] { align-self: stretch; }
     .advanced.is-open { display: grid; }
     .filter-group { border: 1px solid #d5dbe0; background: #fafbfc; }
     .filter-group summary { padding: 11px 14px; font-weight: 700; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 8px; }

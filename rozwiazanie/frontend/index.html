@@ -163,7 +163,11 @@
     .rtable th button:focus-visible { outline: 3px solid #ffc400; }
     .rtable th.is-protected { background: #fff3dc; color: #6b4300; }
     .rtable td.is-protected { background: #fffaf0; }
-    .rtable td { max-width: 260px; overflow-wrap: anywhere; }
+    .rtable td { max-width: 240px; overflow-wrap: anywhere; }
+    .rtable th, .rtable td { padding: 8px 10px; }
+    .rtable tr.groups th { background: #e9eef2; color: #3d4954; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+      border-bottom: 0; border-left: 2px solid #fff; }
+    .rtable .grp-start { border-left: 2px solid #d5dbe0; }
     .rtable td:first-child, .rtable th:first-child { position: sticky; left: 0; background: inherit; }
     .rtable tbody tr { background: #fff; }
     .rtable tbody tr:hover { background: #f4f9fd; }
@@ -181,6 +185,8 @@
     }
     .result__top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
     .result h3 { margin: 0; color: #202b34; font-size: 18px; }
+    .result__where { margin: 4px 0; color: #34414c; font-size: 14px; line-height: 1.5; }
+    .result__hours { color: #34414c; font-size: 13px; font-weight: 650; align-self: center; }
     .badge { padding: 4px 9px; background: #e6f3eb; color: #176239; border-radius: 2px; font-size: 12px; font-weight: 700; }
     .badge--unknown { background: #eef0f2; color: #4d5962; }
     .admin-link { border: 0; background: none; color: var(--blue); font-weight: 650; cursor: pointer; padding: 0; }
@@ -651,18 +657,24 @@
         return box;
       }
 
+      // Kolejność w karcie: 1) gdzie jest AED, 2) czy da się go użyć teraz, 3) informacje dodatkowe
+      function cardHeading(item) {
+        const st = item.standard || {};
+        return item.nazwa_obiektu || st.building_name || st.street_address || st.city || item.adres || "Defibrylator AED";
+      }
       function resultCard(item) {
+        const st = item.standard || {};
         const card = document.createElement("article");
         card.className = "result";
         const top = document.createElement("div");
         top.className = "result__top";
-        // tytuł: nazwa obiektu, a gdy źródło jej nie podaje – ulica
-        const st0 = item.standard || {};
-        const heading = item.nazwa_obiektu || [st0.street_address, st0.city].filter(Boolean).join(", ") || "Defibrylator AED";
-        appendText(top, "h3", "", heading);
+        appendText(top, "h3", "", cardHeading(item));
         card.append(top);
 
-        const address = [item.adres, item.pietro ? `piętro ${item.pietro}` : ""].filter(Boolean).join(", ");
+        // 1. Lokalizacja
+        const fullAddress = [st.street_address, [st.postal_code, st.city].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+          || item.adres;
+        const address = [fullAddress, item.pietro ? `piętro ${item.pietro}` : ""].filter(Boolean).join(", ");
         const addressLine = appendText(card, "p", "result__address", address || "Adres nie został podany");
         if (item.odleglosc_m != null) {
           const meters = item.odleglosc_m;
@@ -670,34 +682,44 @@
           const minutes = Math.max(1, Math.round(meters * 1.3 / 83));
           appendText(addressLine, "span", "result__distance", ` · ${distance} od Ciebie (ok. ${minutes} min pieszo)`);
         }
-        if (item.opis_lokalizacji) appendText(card, "p", "result__description", item.opis_lokalizacji);
-        const st = item.standard || {};
+        const where = [item.opis_lokalizacji || st.exact_location,
+                       st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""]
+          .filter(Boolean).join(" · ");
+        if (where) appendText(card, "p", "result__where", where.charAt(0).toUpperCase() + where.slice(1));
+
+        // 2. Najważniejsze: dostępność, godziny, klucz/kod, sprawność
         const tags = [];
         if (st.availability_type === "24/7") tags.push(["Dostępny 24/7", "ok"]);
         else if (st.availability_type === "GODZINY_OTWARCIA") tags.push(["W godzinach otwarcia", "warn"]);
         else if (st.availability_type === "TYLKO_PERSONEL") tags.push(["Tylko personel", "bad"]);
         if (st.is_locked === false) tags.push(["Bez klucza i kodu", "ok"]);
         if (st.is_locked === true) tags.push(["Wymaga klucza lub kodu", "warn"]);
-        if (st.is_indoor === true) tags.push(["Wewnątrz budynku", ""]);
-        if (st.is_indoor === false) tags.push(["Na zewnątrz", ""]);
         if (st.operational_status === "SPRAWNY") tags.push(["Sprawny", "ok"]);
         if (st.operational_status === "NIESPRAWNY") tags.push(["Niesprawny", "bad"]);
         if (st.operational_status === "W_SERWISIE") tags.push(["W serwisie", "warn"]);
-        if (st.possible_duplicate === true) tags.push(["Możliwy duplikat", "warn"]);
-        if (tags.length) {
+        const hours = st.opening_hours || item.godziny_dostepnosci;
+        if (tags.length || hours) {
           const row = document.createElement("div");
           row.className = "result__chips";
           tags.forEach(([label, kind]) => appendText(row, "span", `tag${kind ? ` tag--${kind}` : ""}`, label));
+          if (hours) appendText(row, "span", "result__hours", `Godziny: ${hours}`);
           card.append(row);
         }
+
+        // 3. Dodatkowe informacje
         const metadata = [
-          item.godziny_dostepnosci ? `Godziny: ${item.godziny_dostepnosci}` : "",
-          item.dysponent ? `Dysponent: ${item.dysponent}` : "",
-          item.data_weryfikacji ? `Weryfikacja: ${item.data_weryfikacji}` : "",
+          item.dysponent || st.operator_name ? `Dysponent: ${item.dysponent || st.operator_name}` : "",
+          item.data_weryfikacji ? `Aktualizacja: ${item.data_weryfikacji}` : "",
           item.zbior ? `Zbiór: ${item.zbior}` : "",
           "Źródło: dane.gov.pl",
         ].filter(Boolean).join(" · ");
         appendText(card, "p", "result__meta", metadata);
+        if (st.possible_duplicate === true) {
+          const dup = document.createElement("div");
+          dup.className = "result__chips";
+          appendText(dup, "span", "tag tag--warn", "Możliwy duplikat");
+          card.append(dup);
+        }
         if (Array.isArray(item._chronione)) card.append(protectedBox(item));
 
         const links = document.createElement("div");
@@ -836,16 +858,20 @@
         if (v === null || v === undefined || v === "") return "—";
         return String(v);
       };
-      // kolejność czytelna dla człowieka: gdzie jest i czy da się go użyć, potem reszta, współrzędne i źródło na końcu
-      const TABLE_ORDER = ["building_name", "city", "street_address", "exact_location", "availability_type", "opening_hours",
-        "is_locked", "is_indoor", "operational_status", "operator_name", "aed_sn", "pad_expiration_date",
-        "battery_expiration_date", "possible_duplicate", "region", "postal_code", "record_updated_at", "latitude", "longitude",
-        "data_source"];
+      // kolejność: 1) lokalizacja defibrylatora, 2) najważniejsze (czy da się go użyć), 3) informacje dodatkowe
+      const TABLE_GROUPS = [
+        ["Lokalizacja", ["_odl", "city", "street_address", "postal_code", "building_name", "exact_location", "is_indoor"]],
+        ["Najważniejsze", ["availability_type", "opening_hours", "is_locked", "operational_status"]],
+        ["Informacje dodatkowe", ["operator_name", "aed_sn", "pad_expiration_date", "battery_expiration_date",
+          "possible_duplicate", "region", "latitude", "longitude", "record_updated_at", "data_source"]],
+      ];
+      const TABLE_ORDER = TABLE_GROUPS.flatMap(([, pola]) => pola);
+      const groupOf = (pole) => (TABLE_GROUPS.find(([, pola]) => pola.includes(pole)) || TABLE_GROUPS[2])[0];
       function tableColumns() {
         const rank = (c) => { const i = TABLE_ORDER.indexOf(c.pole); return i < 0 ? 99 : i; };
-        const cols = [...schemaCols].sort((a, b) => rank(a) - rank(b));
-        if (mode?.typ === "najblizsze") cols.splice(1, 0, { pole: "_odl", nazwa: "Odległość", typ: "number" });
-        return cols;
+        const cols = [...schemaCols];
+        if (mode?.typ === "najblizsze") cols.push({ pole: "_odl", nazwa: "Odległość", typ: "number" });
+        return cols.sort((a, b) => rank(a) - rank(b));
       }
       // zapasowo: pola rekordu mapy, gdyby serwer (np. starsza wersja) nie przysłał wiersza złotego standardu
       function legacyStandard(it) {
@@ -860,17 +886,30 @@
         const cols = tableColumns();
         const table = document.getElementById("rtable");
         const rows = items.map((it) => ({ ...legacyStandard(it), ...(it.standard || {}), _nazwa: it.nazwa_obiektu, _odl: it.odleglosc_m }));
-        if (!cols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: cols[1]?.pole || "city", dir: 1 };
+        if (!cols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: "city", dir: 1 };
         const key = tableSort.pole;
         rows.sort((a, b) => (key === "_odl" ? (a._odl - b._odl)
           : String(a[key] ?? "").localeCompare(String(b[key] ?? ""), "pl", { numeric: true })) * tableSort.dir);
         const pages = Math.max(1, Math.ceil(rows.length / tablePageSize));
         tablePage = Math.min(tablePage, pages);
+        const groupRow = document.createElement("tr");
+        groupRow.className = "groups";
+        const starts = new Set();
+        cols.forEach((c, i) => {
+          const g = groupOf(c.pole);
+          if (i > 0 && groupOf(cols[i - 1].pole) === g) { groupRow.lastChild.colSpan += 1; return; }
+          starts.add(i);
+          const th = document.createElement("th");
+          th.scope = "colgroup";
+          th.textContent = g;
+          groupRow.append(th);
+        });
         const thead = document.createElement("tr");
-        cols.forEach((c) => {
+        cols.forEach((c, i) => {
           const th = document.createElement("th");
           th.scope = "col";
           if (c.chroniona) { th.className = "is-protected"; th.title = "Kolumna chroniona: widoczna tylko dla administratora"; }
+          if (i > 0 && starts.has(i)) th.classList.add("grp-start");
           const btn = document.createElement("button");
           btn.type = "button";
           btn.textContent = c.nazwa.replace(/\?$/, "") + (key === c.pole ? (tableSort.dir > 0 ? " ▲" : " ▼") : "");
@@ -882,14 +921,15 @@
           th.append(btn);
           thead.append(th);
         });
-        table.tHead.replaceChildren(thead);
+        table.tHead.replaceChildren(groupRow, thead);
         const body = table.tBodies[0];
         body.replaceChildren();
         rows.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize).forEach((r) => {
           const tr = document.createElement("tr");
-          cols.forEach((c) => {
+          cols.forEach((c, i) => {
             const td = document.createElement("td");
             if (c.chroniona) td.className = "is-protected";
+            if (i > 0 && starts.has(i)) td.classList.add("grp-start");
             if (c.typ === "number" || c.typ === "date") td.classList.add("num");
             let v = c.pole === "building_name" ? (r.building_name || r._nazwa) : r[c.pole];
             if (c.pole === "_odl" && v != null) v = v < 1000 ? `${v} m` : `${(v / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
@@ -954,13 +994,20 @@
           pts.push(ll);
           const box = document.createElement("div");
           box.className = "rpopup";
-          appendText(box, "h3", "", text(it.nazwa_obiektu, "Defibrylator AED"));
-          if (it.adres) appendText(box, "p", "", it.adres);
-          if (it.opis_lokalizacji) appendText(box, "p", "", it.opis_lokalizacji);
+          appendText(box, "h3", "", cardHeading(it));
+          const adr = [st.street_address, [st.postal_code, st.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || it.adres;
+          if (adr) appendText(box, "p", "", adr);
+          const where = [it.opis_lokalizacji || st.exact_location,
+                         st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""].filter(Boolean).join(" · ");
+          if (where) appendText(box, "p", "", where);
+          if (it.odleglosc_m != null) appendText(box, "p", "", `${it.odleglosc_m} m od Ciebie`);
           appendText(box, "p", "", [st.availability_type === "24/7" ? "Dostępny 24/7" : st.availability_type === "GODZINY_OTWARCIA"
             ? "W godzinach otwarcia" : st.availability_type === "TYLKO_PERSONEL" ? "Tylko personel" : "Brak informacji o dostępie",
-            st.is_locked === false ? "bez klucza" : st.is_locked === true ? "wymaga klucza lub kodu" : ""].filter(Boolean).join(" · "));
-          if (it.odleglosc_m != null) appendText(box, "p", "", `${it.odleglosc_m} m od Ciebie`);
+            st.is_locked === false ? "bez klucza i kodu" : st.is_locked === true ? "wymaga klucza lub kodu" : "",
+            LABELS[st.operational_status] && st.operational_status !== "NIEZNANY" ? LABELS[st.operational_status].toLowerCase() : ""]
+            .filter(Boolean).join(" · "));
+          const godz = st.opening_hours || it.godziny_dostepnosci;
+          if (godz) appendText(box, "p", "", `Godziny: ${godz}`);
           const a = document.createElement("a");
           a.href = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${it.szerokosc},${it.dlugosc}`;
           a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "Prowadź do AED";

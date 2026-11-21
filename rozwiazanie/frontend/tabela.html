@@ -514,13 +514,14 @@
       $("modal-title").textContent = row.building_name || row.street_address || row.city || "Defibrylator AED";
       $("modal-sub").textContent = [row.street_address, row.postal_code, row.city, row.region].filter(Boolean).join(", ");
       const sections = [
-        ["Lokalizacja (WGS84)", [["Województwo", val(row.region)], ["Miejscowość", val(row.city)],
-          ["Kod pocztowy", val(row.postal_code)], ["Adres", val(row.street_address)], ["Wewnątrz budynku", val(indoor(row.is_indoor))],
-          ["Dokładne miejsce", `<strong>${val(row.exact_location)}</strong>`],
-          ["GPS", `<code>${esc(row.latitude)}, ${esc(row.longitude)}</code>`]]],
-        ["Dostępność i zabezpieczenia", [["Typ dostępności", badgeAvail(row.availability_type)],
-          ["Godziny", `<code>${val(row.opening_hours)}</code>`], ["Szafka zamknięta", badgeLocked(row.is_locked)]]],
-        ["Stan i dysponent", [["Status", badgeStatus(row.operational_status)], ["Dysponent", `<strong>${val(row.operator_name)}</strong>`],
+        ["Lokalizacja", [["Miejscowość", val(row.city)], ["Adres", val(row.street_address)],
+          ["Kod pocztowy", val(row.postal_code)], ["Obiekt", val(row.building_name)],
+          ["Dokładne miejsce", `<strong>${val(row.exact_location)}</strong>`], ["Wewnątrz budynku", val(indoor(row.is_indoor))],
+          ["Województwo", val(row.region)], ["GPS (WGS84)", `<code>${esc(row.latitude)}, ${esc(row.longitude)}</code>`]]],
+        ["Najważniejsze", [["Typ dostępności", badgeAvail(row.availability_type)],
+          ["Godziny", `<code>${val(row.opening_hours)}</code>`], ["Szafka zamknięta", badgeLocked(row.is_locked)],
+          ["Status", badgeStatus(row.operational_status)]]],
+        ["Informacje dodatkowe", [["Dysponent", `<strong>${val(row.operator_name)}</strong>`],
           ["Aktualizacja", val(row.record_updated_at)], ["Możliwy duplikat", badgeDup(row.possible_duplicate)],
           ["Źródło", renderCell(row, "data_source")]]],
       ];

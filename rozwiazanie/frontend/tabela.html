@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b3152">
+  <title>Tabela rejestru AED — wzorcowy zakres danych</title>
+  <!-- Układ i logika widoku: gałąź „paulina” (backend/table_preview.html, autorka: Paulina Pawlik).
+       Styl: Rejestr AED (rozwiazanie/frontend/index.html). Dane: zagregowana tabela /aed-api/tabela. -->
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #242a30;
+      background: #f3f4f5;
+      --blue: #0066a4;
+      --navy: #082d4b;
+      --orange: #d72d00;
+      --line: #e1e4e6;
+      --muted: #56636d;
+      --soft: #f6f7f8;
+      --ok: #176239; --ok-bg: #e6f3eb;
+      --warn: #7a5200; --warn-bg: #fff6e5;
+      --err: #b00020; --err-bg: #fdecef;
+      --info: #0b4f7d; --info-bg: #e7f1f8;
+      --font-scale: 1;
+    }
+    * { box-sizing: border-box; }
+    html { font-size: calc(16px * var(--font-scale)); }
+    body { margin: 0; min-width: 320px; }
+    button, input, select { font: inherit; }
+    a { color: var(--blue); }
+    a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visible {
+      outline: 3px solid #ffc400; outline-offset: 2px;
+    }
+
+    /* Nagłówek jak w Rejestrze AED */
+    .topbar { height: 58px; background: #fff; border-bottom: 1px solid #d5d9dc; }
+    .topbar__inner { width: min(1280px, calc(100% - 32px)); height: 100%; margin: auto; display: flex; align-items: center; gap: 18px; }
+    .brand-mark { width: 44px; height: 42px; display: grid; place-items: center; background: #d40024; color: #fff; font-weight: 800; letter-spacing: .03em; }
+    .brand { color: #20252a; font-family: Georgia, serif; font-size: 21px; text-decoration: none; }
+    .topbar__links { margin-left: auto; display: flex; align-items: center; gap: 26px; font-size: 14px; font-weight: 650; }
+    .topbar__links a { text-decoration: none; }
+    .topbar__links a[aria-current="page"] { color: #20252a; border-bottom: 3px solid var(--orange); padding-bottom: 3px; }
+
+    /* Pas tytułowy jak „hero” rejestru */
+    .hero {
+      color: #fff; padding: 26px 16px 30px;
+      background: radial-gradient(ellipse at 82% 25%, rgba(52, 127, 170, .42), transparent 35%),
+                  linear-gradient(118deg, #082844, #164f7d 72%, #0c3658);
+    }
+    .hero__inner, .wrap { width: min(1280px, 100%); margin: 0 auto; }
+    .hero__top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 18px; }
+    .hero h1 { margin: 0 0 8px; font-size: 26px; }
+    .hero__desc { margin: 0 0 14px; max-width: 760px; font-size: 15px; line-height: 1.55; }
+    .meta-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .meta-tag { font-size: 12px; font-weight: 700; padding: 4px 9px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.35); }
+    .meta-tag--admin { background: #fff6e5; color: var(--warn); border-color: #f0c36d; }
+    .a11y { display: flex; gap: 6px; }
+    .a11y button { min-width: 38px; height: 32px; border: 1px solid rgba(255,255,255,.55); background: transparent; color: #fff; font-weight: 700; cursor: pointer; }
+    .a11y button[aria-pressed="true"], .a11y button:hover { background: #fff; color: var(--navy); }
+
+    /* Przyciski jak w rejestrze */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 42px; padding: 0 18px; font-weight: 700; text-decoration: none; cursor: pointer; border: 0; }
+    .btn--primary { background: var(--orange); color: #fff; }
+    .btn--primary:hover { background: #b92500; }
+    .btn--outline { background: #fff; color: #005ea8; border: 1px solid #1681cb; }
+    .btn--outline:hover { background: #eef6fc; }
+    .btn--small { min-height: 34px; padding: 0 12px; font-size: 14px; }
+    .file-btn { position: relative; overflow: hidden; }
+    .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+    /* Panel filtrów jak panel wyszukiwania */
+    .panel { background: #fff; color: #242a30; padding: 22px 24px 18px; box-shadow: 0 3px 14px rgba(0,0,0,.13); margin-top: 20px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+    .filters { display: grid; grid-template-columns: minmax(220px, 1.8fr) repeat(4, minmax(140px, 1fr)); gap: 12px; align-items: end; }
+    .field label { display: block; font-size: 13px; font-weight: 650; color: var(--muted); margin-bottom: 5px; }
+    .field input, .field select { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #cfd3d6; background: #fff; color: #303941; border-radius: 0; }
+    .subbar { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .chip { border: 1px solid #1681cb; background: #fff; color: #005ea8; padding: 7px 14px; font-size: 14px; font-weight: 650; cursor: pointer; }
+    .chip[aria-pressed="true"] { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .chip[aria-pressed="true"]::before { content: "✓ "; }
+    .text-button { border: 0; background: none; padding: 8px 0; color: #005ea8; font-weight: 650; text-decoration: underline; cursor: pointer; }
+
+    .col-picker { position: relative; }
+    .col-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; width: 330px; max-height: 400px; overflow-y: auto;
+      background: #fff; border: 1px solid #cfd3d6; box-shadow: 0 10px 28px rgba(8,45,75,.18); padding: 12px 14px; }
+    .col-menu__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 14px; }
+    .col-menu__group { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; margin: 10px 0 4px; }
+    .col-opt { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 14px; cursor: pointer; }
+    .col-opt code { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+    /* Treść */
+    .content { padding: 24px 16px 48px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-left: 5px solid #0b6ca7; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+    .kpi__label { font-size: 13px; color: var(--muted); font-weight: 650; }
+    .kpi__val { font-size: 28px; font-weight: 800; color: var(--navy); line-height: 1.15; }
+    .kpi__sub { font-size: 12px; color: var(--muted); }
+
+    .table-card { background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    .table-scroll { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    thead th { background: #eef1f3; color: #202b34; font-weight: 700; text-align: left; padding: 11px 12px; border-bottom: 2px solid #cfd3d6; white-space: nowrap; }
+    th.is-protected { background: #fff6e5; color: var(--warn); }
+    .sort-btn { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+    .sort-btn:hover { color: var(--blue); }
+    .sort-ind { font-size: 11px; opacity: .5; }
+    th[aria-sort="ascending"] .sort-ind, th[aria-sort="descending"] .sort-ind { opacity: 1; color: var(--orange); }
+    tbody tr { border-bottom: 1px solid var(--line); cursor: pointer; }
+    tbody tr:hover { background: #f1f6fa; }
+    tbody td { padding: 11px 12px; vertical-align: top; }
+    td.is-protected { background: #fffaf0; }
+    .cell-id { font-family: Consolas, monospace; font-size: 13px; font-weight: 700; color: var(--navy); white-space: nowrap; }
+    .cell-main { font-weight: 650; color: #202b34; }
+    .cell-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .cell-loc { max-width: 300px; }
+    .badge { display: inline-block; padding: 4px 9px; border-radius: 2px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .badge--ok { background: var(--ok-bg); color: var(--ok); }
+    .badge--info { background: var(--info-bg); color: var(--info); }
+    .badge--warn { background: var(--warn-bg); color: var(--warn); }
+    .badge--err { background: var(--err-bg); color: var(--err); }
+    .badge--muted { background: #eef0f2; color: #4d5962; }
+    .detail-btn { border: 1px solid #1681cb; background: #fff; color: #005ea8; padding: 5px 10px; font-size: 13px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+    .detail-btn:hover { background: #eef6fc; }
+    .table-foot { padding: 12px 16px; background: var(--soft); border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; }
+    .pager { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .pager select { height: 34px; padding: 0 8px; border: 1px solid #cfd3d6; background: #fff; }
+    .pager button { padding: 7px 14px; color: #005ea8; background: #fff; border: 1px solid #1681cb; cursor: pointer; }
+    .pager button:disabled { opacity: .45; cursor: default; }
+    .empty-state { padding: 24px; text-align: center; color: #4e5961; }
+
+    /* Szczegóły rekordu */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(8,45,75,.55); z-index: 100; display: grid; place-items: center; padding: 16px; }
+    .modal { width: 100%; max-width: 780px; max-height: 90vh; overflow-y: auto; background: #fff; border-top: 5px solid var(--orange); padding: 20px 22px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+    .modal__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+    .modal__title { margin: 0; font-size: 20px; color: #202b34; }
+    .modal__close { border: 1px solid #cfd3d6; background: #fff; width: 38px; height: 38px; font-size: 18px; cursor: pointer; flex: none; }
+    .modal__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    .modal__sec { border: 1px solid var(--line); border-left: 4px solid #0b6ca7; padding: 12px 14px; background: var(--soft); }
+    .modal__sec--protected { border-left-color: #f0a500; background: #fffaf0; }
+    .modal__sec h3 { margin: 0 0 8px; font-size: 13px; color: var(--navy); text-transform: uppercase; letter-spacing: .03em; }
+    .modal__sec--protected h3 { color: var(--warn); }
+    .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; margin: 0; font-size: 14px; }
+    .kv dt { color: var(--muted); font-weight: 600; }
+    .kv dd { margin: 0; overflow-wrap: anywhere; }
+    .modal__actions { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+    .hidden { display: none !important; }
+
+    /* Wysoki kontrast (logika z widoku Pauliny) */
+    body.hc { --blue: #ffea00; --navy: #ffea00; --orange: #ffea00; --line: #ffea00; --muted: #ffea00; --soft: #000; background: #000; color: #ffea00; }
+    body.hc .topbar, body.hc .panel, body.hc .kpi, body.hc .table-card, body.hc thead th, body.hc .modal, body.hc .modal__sec,
+    body.hc .field input, body.hc .field select, body.hc .chip, body.hc .btn, body.hc .detail-btn, body.hc .pager button,
+    body.hc .pager select, body.hc .col-menu, body.hc td.is-protected, body.hc th.is-protected { background: #000 !important; color: #ffea00 !important; border-color: #ffea00 !important; }
+    body.hc .hero { background: #000; }
+    body.hc .brand, body.hc .cell-main, body.hc .modal__title, body.hc .kpi__val { color: #ffea00; }
+    body.hc .badge { background: #000 !important; color: #ffea00 !important; border: 1px solid #ffea00; }
+    body.hc tbody tr:hover { background: #1a1a00; }
+
+    @media (max-width: 1000px) { .filters { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 760px) {
+      .topbar__inner { gap: 11px; }
+      .brand { font-size: 18px; }
+      .topbar__links { gap: 12px; font-size: 13px; }
+      .panel { padding: 18px 16px 14px; }
+      .hero h1 { font-size: 22px; }
+    }
+    @media (max-width: 520px) {
+      .brand-mark { width: 38px; height: 38px; font-size: 13px; }
+      .brand { font-size: 16px; }
+      .topbar__links { gap: 9px; }
+      .filters { grid-template-columns: 1fr; }
+      .col-menu { width: min(330px, calc(100vw - 32px)); }
+      .kv { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand-mark" aria-hidden="true">AED</div>
+      <a class="brand" href="/">Rejestr AED</a>
+      <nav class="topbar__links" aria-label="Nawigacja">
+        <a href="/mapa">Mapa AED</a>
+        <a href="/tabela" aria-current="page">Tabela</a>
+        <a href="/#administrator">Administrator</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero" aria-labelledby="page-title">
+    <div class="hero__inner">
+      <div class="hero__top">
+        <div>
+          <h1 id="page-title">Tabela rejestru AED</h1>
+          <p class="hero__desc">
+            Jedna tabela ze wszystkich zbiorów o defibrylatorach opublikowanych w dane.gov.pl, sprowadzona do
+            <strong>wzorcowego zakresu danych</strong>. Domyślnie widać 8 kluczowych kolumn. Kliknij wiersz, aby zobaczyć
+            pełny rekord, albo włącz kolejne kolumny przyciskiem „Kolumny”.
+          </p>
+          <div class="meta-tags">
+            <span class="meta-tag" id="source-tag">Źródło: dane.gov.pl</span>
+            <span class="meta-tag" id="role-tag">Widok publiczny</span>
+            <span class="meta-tag">Licencja: zgodnie z metadanymi zbiorów</span>
+            <span class="meta-tag">Bez danych osobowych w widoku publicznym</span>
+          </div>
+        </div>
+        <div class="a11y" role="group" aria-label="Dostępność">
+          <button type="button" data-scale="1" aria-label="Domyślny rozmiar tekstu">A</button>
+          <button type="button" data-scale="1.1" aria-label="Powiększ tekst">A+</button>
+          <button type="button" data-scale="1.22" aria-label="Bardzo duży tekst">A++</button>
+          <button type="button" id="btn-contrast" aria-pressed="false">Kontrast</button>
+        </div>
+      </div>
+
+      <section class="panel" aria-label="Wyszukiwanie i filtrowanie tabeli">
+        <div class="actions">
+          <a class="btn btn--primary" href="/aed-api/export.xlsx">⬇ Pobierz XLSX</a>
+          <a class="btn btn--outline" href="/aed-api/export.csv">⬇ Pobierz CSV</a>
+          <button type="button" id="btn-export-json" class="btn btn--outline">⬇ JSON (bieżący widok)</button>
+          <label class="btn btn--outline file-btn" title="Sprawdź plik dostawcy: kolumny muszą mieć nazwy ze wzorcowego zakresu">
+            <input type="file" id="csv-upload" accept=".csv,text/csv">⬆ Podgląd pliku CSV dostawcy
+          </label>
+        </div>
+        <div class="filters">
+          <div class="field">
+            <label for="f-q">Szukaj w tabeli</label>
+            <input id="f-q" type="search" placeholder="Miejscowość, obiekt, adres, dysponent…">
+          </div>
+          <div class="field">
+            <label for="f-region">Województwo</label>
+            <select id="f-region"><option value="">Wszystkie</option></select>
+          </div>
+          <div class="field">
+            <label for="f-avail">Dostępność</label>
+            <select id="f-avail">
+              <option value="">Wszystkie</option>
+              <option value="PUBLICZNY">Publiczny</option>
+              <option value="GODZINY_OTWARCIA">W godzinach otwarcia</option>
+              <option value="TYLKO_PERSONEL">Tylko personel</option>
+              <option value="PRYWATNY">Prywatny</option>
+              <option value="NIEZNANY">Brak informacji</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-status">Status sprawności</label>
+            <select id="f-status">
+              <option value="">Wszystkie</option>
+              <option value="SPRAWNY">Sprawny</option>
+              <option value="W_SERWISIE">W serwisie</option>
+              <option value="NIESPRAWNY">Niesprawny</option>
+              <option value="NIEZNANY">Nieznany</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-dup">Duplikaty</label>
+            <select id="f-dup">
+              <option value="">Wszystkie</option>
+              <option value="tak">Tylko możliwe duplikaty</option>
+              <option value="nie">Bez duplikatów</option>
+            </select>
+          </div>
+        </div>
+        <div class="subbar">
+          <div class="chips" role="group" aria-label="Szybkie filtry">
+            <button type="button" id="chip-unlocked" class="chip" aria-pressed="false">Bez klucza i kodu</button>
+            <button type="button" id="chip-outdoor" class="chip" aria-pressed="false">Tylko na zewnątrz</button>
+            <button type="button" id="chip-247" class="chip" aria-pressed="false">Całą dobę (24/7)</button>
+            <button type="button" id="btn-reset" class="text-button">Wyczyść filtry</button>
+          </div>
+          <div class="col-picker">
+            <button type="button" id="btn-cols" class="btn btn--outline btn--small" aria-expanded="false" aria-controls="col-menu">
+              ⚙ Kolumny (<span id="col-count">8</span>)
+            </button>
+            <div id="col-menu" class="col-menu hidden" role="dialog" aria-label="Wybór widocznych kolumn">
+              <div class="col-menu__head">
+                <strong>Widoczne kolumny</strong>
+                <button type="button" id="btn-cols-default" class="text-button">Domyślne (8)</button>
+              </div>
+              <div id="col-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <main class="content">
+    <div class="wrap">
+      <section class="kpis" aria-label="Podsumowanie przefiltrowanych danych">
+        <div class="kpi"><span class="kpi__label">Wyświetlane AED</span><span class="kpi__val" id="kpi-total">0</span><span class="kpi__sub" id="kpi-total-sub">z 0 w zbiorze</span></div>
+        <div class="kpi"><span class="kpi__label">Dostęp publiczny</span><span class="kpi__val" id="kpi-pub">0</span><span class="kpi__sub" id="kpi-pub-sub">0% widoku</span></div>
+        <div class="kpi"><span class="kpi__label">Dostępne całą dobę (24/7)</span><span class="kpi__val" id="kpi-247">0</span><span class="kpi__sub" id="kpi-247-sub">0% widoku</span></div>
+        <div class="kpi"><span class="kpi__label">Możliwe duplikaty</span><span class="kpi__val" id="kpi-dup">0</span><span class="kpi__sub">ten sam numer seryjny lub do 15 m</span></div>
+      </section>
+
+      <section class="table-card" aria-label="Tabela rekordów AED">
+        <div class="table-scroll">
+          <table>
+            <thead><tr id="t-head"></tr></thead>
+            <tbody id="t-body"></tbody>
+          </table>
+        </div>
+        <div id="empty-state" class="empty-state hidden">Brak AED spełniających wybrane kryteria.</div>
+        <div class="table-foot">
+          <div id="t-info" aria-live="polite">Wczytywanie tabeli…</div>
+          <div class="pager">
+            <label for="page-size">Wierszy:</label>
+            <select id="page-size">
+              <option value="10" selected>10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <button type="button" id="btn-prev">Poprzednia</button>
+            <span id="page-num">1 / 1</span>
+            <button type="button" id="btn-next">Następna</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="modal-bg" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal">
+      <div class="modal__head">
+        <div>
+          <h2 id="modal-title" class="modal__title">Szczegóły AED</h2>
+          <div id="modal-sub" class="cell-sub"></div>
+        </div>
+        <button type="button" id="modal-close" class="modal__close" aria-label="Zamknij szczegóły">✕</button>
+      </div>
+      <div id="modal-body" class="modal__grid"></div>
+      <div id="modal-actions" class="modal__actions"></div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    // 8 domyślnych kolumn (układ z widoku Pauliny); pozostałe przychodzą z tabeli wzorca /aed-api/tabela
+    const DEFAULT_COLS = [
+      { key: "_id", label: "Identyfikator" },
+      { key: "miejscowosc", label: "Miejscowość i adres" },
+      { key: "nazwa_budynku", label: "Obiekt i dokładne miejsce" },
+      { key: "typ_dostepnosci", label: "Dostępność" },
+      { key: "czy_zamkniety", label: "Klucz / kod" },
+      { key: "status_operacyjny", label: "Status sprawności" },
+      { key: "mozliwy_duplikat", label: "Możliwy duplikat" },
+      { key: "nazwa_operatora", label: "Dysponent" },
+    ];
+    let COLUMNS = [];
+    let schema = [];   // kolumny tabeli wzorca widoczne dla roli (z serwera)
+    let protectedKeys = new Set();
+    let role = "publiczny";
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const yes = (v) => v === true || v === "True" || v === "true" || v === "TAK";
+    const no = (v) => v === false || v === "False" || v === "false" || v === "NIE";
+    const state = { all: [], filtered: [], q: "", region: "", avail: "", status: "", dup: "",
+                    onlyUnlocked: false, onlyOutdoor: false, only247: false,
+                    sortKey: "miejscowosc", sortDir: "asc", page: 1, pageSize: 10 };
+
+    function buildColumns() {
+      const label = Object.fromEntries(schema.map((c) => [c.pole, c.nazwa]));
+      const inDefault = new Set(DEFAULT_COLS.map((c) => c.key).concat(["wojewodztwo", "adres_uliczny", "kod_pocztowy",
+        "dokladna_lokalizacja", "wewnatrz_budynku", "godziny_dostepnosci"]));
+      COLUMNS = DEFAULT_COLS.map((c) => ({ ...c, group: "Podstawowe (domyślne)", visible: true }))
+        .concat(schema.filter((c) => !inDefault.has(c.pole) || ["wojewodztwo", "adres_uliczny", "kod_pocztowy", "godziny_dostepnosci", "wewnatrz_budynku"].includes(c.pole))
+          .filter((c) => !DEFAULT_COLS.some((d) => d.key === c.pole))
+          .map((c) => ({ key: c.pole, label: label[c.pole] || c.pole, visible: false,
+                         group: c.chroniona ? "Chronione (tylko administrator)" : "Dodatkowe ze wzorcowego zakresu" })));
+    }
+
+    const badge = (cls, text) => `<span class="badge badge--${cls}">${esc(text)}</span>`;
+    function badgeAvail(v) {
+      return ({ PUBLICZNY: badge("ok", "Publiczny"), GODZINY_OTWARCIA: badge("info", "Godziny otwarcia"),
+                TYLKO_PERSONEL: badge("warn", "Tylko personel"), PRYWATNY: badge("warn", "Prywatny") })[v] || badge("muted", "Brak informacji");
+    }
+    function badgeLocked(v) { return yes(v) ? badge("warn", "🔒 Tak") : no(v) ? badge("ok", "Nie") : badge("muted", "Brak informacji"); }
+    function badgeStatus(v) {
+      return ({ SPRAWNY: badge("ok", "✓ Sprawny"), W_SERWISIE: badge("warn", "W serwisie"), NIESPRAWNY: badge("err", "✕ Niesprawny") })[v] || badge("muted", "Nieznany");
+    }
+    function badgeDup(v) { return yes(v) ? badge("warn", "Możliwy duplikat") : badge("ok", "Nie"); }
+    function indoor(v) { return yes(v) ? "Wewnątrz" : no(v) ? "Na zewnątrz" : ""; }
+
+    function renderCell(row, key) {
+      if (key === "_id") return `<span class="cell-id">${esc(row._id)}</span>`;
+      if (key === "miejscowosc") {
+        const sub = [row.wojewodztwo, row.adres_uliczny, row.kod_pocztowy].filter(Boolean).map(esc).join(" · ");
+        return `<div class="cell-main">${esc(row.miejscowosc || "—")}</div>${sub ? `<div class="cell-sub">${sub}</div>` : ""}`;
+      }
+      if (key === "nazwa_budynku") {
+        const ind = indoor(row.wewnatrz_budynku);
+        return `<div class="cell-loc"><div class="cell-main">${esc(row.nazwa_budynku || row.nazwa_operatora || "—")}</div>
+                <div class="cell-sub">${esc(row.dokladna_lokalizacja || "")}${ind ? ` · <strong>${ind}</strong>` : ""}</div></div>`;
+      }
+      if (key === "typ_dostepnosci") {
+        return badgeAvail(row.typ_dostepnosci) + (row.godziny_dostepnosci ? `<div class="cell-sub">${esc(row.godziny_dostepnosci)}</div>` : "");
+      }
+      if (key === "czy_zamkniety") return badgeLocked(row.czy_zamkniety);
+      if (key === "status_operacyjny") return badgeStatus(row.status_operacyjny);
+      if (key === "mozliwy_duplikat") return badgeDup(row.mozliwy_duplikat);
+      if (key === "wewnatrz_budynku") return esc(indoor(row.wewnatrz_budynku) || "—");
+      if (key === "zrodlo_danych" && /^https?:\/\//.test(row.zrodlo_danych || "")) {
+        return `<a href="${esc(row.zrodlo_danych)}" target="_blank" rel="noopener noreferrer">zasób dane.gov.pl</a>`;
+      }
+      const v = row[key];
+      return v === null || v === undefined || v === "" ? "—" : esc(v);
+    }
+
+    function populateRegionFilter() {
+      const sel = $("f-region");
+      const regions = [...new Set(state.all.map((r) => r.wojewodztwo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pl"));
+      sel.innerHTML = `<option value="">Wszystkie (${regions.length})</option>` + regions.map((r) => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+    }
+
+    function buildColumnMenu() {
+      const groups = [...new Set(COLUMNS.map((c) => c.group))];
+      $("col-list").innerHTML = groups.map((g) => `<div class="col-menu__group">${esc(g)}</div>` +
+        COLUMNS.filter((c) => c.group === g).map((c) => `<label class="col-opt"><input type="checkbox" data-col="${esc(c.key)}" ${c.visible ? "checked" : ""}>
+          <span>${esc(c.label)}</span><code>${esc(c.key)}</code></label>`).join("")).join("");
+      $("col-list").querySelectorAll("input[data-col]").forEach((cb) => cb.addEventListener("change", () => {
+        const col = COLUMNS.find((x) => x.key === cb.dataset.col);
+        col.visible = cb.checked;
+        if (!COLUMNS.some((x) => x.visible)) { col.visible = true; cb.checked = true; }
+        renderTable();
+      }));
+    }
+
+    function applyFilters() {
+      const q = state.q.trim().toLocaleLowerCase("pl");
+      state.filtered = state.all.filter((r) => {
+        if (state.region && r.wojewodztwo !== state.region) return false;
+        if (state.avail && r.typ_dostepnosci !== state.avail) return false;
+        if (state.status && r.status_operacyjny !== state.status) return false;
+        if (state.dup === "tak" && !yes(r.mozliwy_duplikat)) return false;
+        if (state.dup === "nie" && yes(r.mozliwy_duplikat)) return false;
+        if (state.onlyUnlocked && !no(r.czy_zamkniety)) return false;
+        if (state.onlyOutdoor && !no(r.wewnatrz_budynku)) return false;
+        if (state.only247 && r.godziny_dostepnosci !== "24/7") return false;
+        if (q) {
+          const hay = [r._id, r.wojewodztwo, r.miejscowosc, r.adres_uliczny, r.nazwa_budynku, r.dokladna_lokalizacja,
+                       r.nazwa_operatora, r.kod_pocztowy].join(" ").toLocaleLowerCase("pl");
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      const k = state.sortKey, mult = state.sortDir === "asc" ? 1 : -1;
+      state.filtered.sort((a, b) => {
+        const av = a[k] ?? "", bv = b[k] ?? "";
+        if (typeof av === "number" && typeof bv === "number") return (av - bv) * mult;
+        return String(av).localeCompare(String(bv), "pl", { numeric: true }) * mult;
+      });
+      if (state.page > Math.max(1, Math.ceil(state.filtered.length / state.pageSize))) state.page = 1;
+      updateKpis();
+      renderTable();
+    }
+
+    function updateKpis() {
+      const rows = state.filtered, n = rows.length;
+      const pub = rows.filter((r) => r.typ_dostepnosci === "PUBLICZNY").length;
+      const c247 = rows.filter((r) => r.godziny_dostepnosci === "24/7").length;
+      const pct = (x) => (n ? `${Math.round((x / n) * 100)}% widoku` : "0% widoku");
+      $("kpi-total").textContent = n;
+      $("kpi-total-sub").textContent = `z ${state.all.length} w zbiorze`;
+      $("kpi-pub").textContent = pub; $("kpi-pub-sub").textContent = pct(pub);
+      $("kpi-247").textContent = c247; $("kpi-247-sub").textContent = pct(c247);
+      $("kpi-dup").textContent = rows.filter((r) => yes(r.mozliwy_duplikat)).length;
+    }
+
+    function renderTable() {
+      const vis = COLUMNS.filter((c) => c.visible);
+      $("col-count").textContent = vis.length;
+      $("t-head").innerHTML = vis.map((c) => {
+        const sorted = state.sortKey === c.key;
+        const aria = sorted ? (state.sortDir === "asc" ? "ascending" : "descending") : "none";
+        const icon = sorted ? (state.sortDir === "asc" ? "▲" : "▼") : "⇅";
+        return `<th scope="col" aria-sort="${aria}" class="${protectedKeys.has(c.key) ? "is-protected" : ""}">
+          <button type="button" class="sort-btn" data-sort="${esc(c.key)}">${esc(c.label)} <span class="sort-ind" aria-hidden="true">${icon}</span></button></th>`;
+      }).join("") + '<th scope="col" style="width:1%">Szczegóły</th>';
+      $("t-head").querySelectorAll("button[data-sort]").forEach((btn) => btn.addEventListener("click", () => {
+        const key = btn.dataset.sort;
+        if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+        else { state.sortKey = key; state.sortDir = "asc"; }
+        applyFilters();
+      }));
+      const total = state.filtered.length;
+      const start = (state.page - 1) * state.pageSize;
+      const slice = state.filtered.slice(start, start + state.pageSize);
+      const maxPage = Math.max(1, Math.ceil(total / state.pageSize));
+      $("empty-state").classList.toggle("hidden", total > 0);
+      $("t-body").innerHTML = slice.map((row, i) => `<tr data-idx="${start + i}" tabindex="0" aria-label="Pokaż szczegóły ${esc(row._id)}">
+          ${vis.map((c) => `<td class="${protectedKeys.has(c.key) ? "is-protected" : ""}">${renderCell(row, c.key)}</td>`).join("")}
+          <td><button type="button" class="detail-btn">Pełne dane</button></td></tr>`).join("");
+      $("t-body").querySelectorAll("tr").forEach((tr) => {
+        tr.addEventListener("click", () => openModal(state.filtered[+tr.dataset.idx]));
+        tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openModal(state.filtered[+tr.dataset.idx]); } });
+      });
+      $("t-info").textContent = `Wyświetlono ${total ? start + 1 : 0}–${Math.min(start + slice.length, total)} z ${total} rekordów`;
+      $("page-num").textContent = `${state.page} / ${maxPage}`;
+      $("btn-prev").disabled = state.page <= 1;
+      $("btn-next").disabled = state.page >= maxPage;
+    }
+
+    function kv(rows) {
+      return `<dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
+    }
+    const val = (v) => (v === null || v === undefined || v === "" ? "—" : esc(v));
+
+    function openModal(row) {
+      if (!row) return;
+      $("modal-title").textContent = row.nazwa_budynku || row.nazwa_operatora || row._id;
+      $("modal-sub").innerHTML = `ID: <code>${esc(row._id)}</code> · ${esc([row.adres_uliczny, row.kod_pocztowy, row.miejscowosc, row.wojewodztwo].filter(Boolean).join(", "))}`;
+      const sections = [
+        ["Lokalizacja (WGS84)", [["Województwo", val(row.wojewodztwo)], ["Miejscowość", val(row.miejscowosc)],
+          ["Kod pocztowy", val(row.kod_pocztowy)], ["Adres", val(row.adres_uliczny)], ["Wewnątrz budynku", val(indoor(row.wewnatrz_budynku))],
+          ["Dokładne miejsce", `<strong>${val(row.dokladna_lokalizacja)}</strong>`],
+          ["GPS", `<code>${esc(row.szerokosc_geograficzna)}, ${esc(row.dlugosc_geograficzna)}</code>`]]],
+        ["Dostępność i zabezpieczenia", [["Typ dostępności", badgeAvail(row.typ_dostepnosci)],
+          ["Godziny", `<code>${val(row.godziny_dostepnosci)}</code>`], ["Szafka zamknięta", badgeLocked(row.czy_zamkniety)]]],
+        ["Stan i dysponent", [["Status", badgeStatus(row.status_operacyjny)], ["Dysponent", `<strong>${val(row.nazwa_operatora)}</strong>`],
+          ["Aktualizacja", val(row.data_aktualizacji_rekordu)], ["Możliwy duplikat", badgeDup(row.mozliwy_duplikat)],
+          ["Źródło", renderCell(row, "zrodlo_danych")]]],
+      ];
+      let html = sections.map(([t, r]) => `<div class="modal__sec"><h3>${esc(t)}</h3>${kv(r)}</div>`).join("");
+      const prot = schema.filter((c) => c.chroniona);
+      if (prot.length) {
+        const today = new Date().toISOString().slice(0, 10);
+        html += `<div class="modal__sec modal__sec--protected"><h3>Dane chronione (tylko administrator)</h3>${kv(prot.map((c) => {
+          const v = row[c.pole];
+          const late = c.typ === "date" && v && v < today ? " " + badge("err", "po terminie") : "";
+          return [c.nazwa, (v ? esc(v) : "brak danych od dostawcy") + late];
+        }))}</div>`;
+      }
+      $("modal-body").innerHTML = html;
+      const lat = row.szerokosc_geograficzna, lon = row.dlugosc_geograficzna;
+      $("modal-actions").innerHTML = (lat && lon ? `<a class="btn btn--outline" href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=18/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>
+        <a class="btn btn--primary" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(lat + "," + lon)}" target="_blank" rel="noopener noreferrer">Pokaż na mapie</a>` : "") +
+        '<button type="button" class="btn btn--outline" id="modal-close-2">Zamknij</button>';
+      $("modal-close-2").addEventListener("click", closeModal);
+      $("modal-bg").classList.remove("hidden");
+      $("modal-close").focus();
+    }
+    function closeModal() { $("modal-bg").classList.add("hidden"); }
+    $("modal-close").addEventListener("click", closeModal);
+    $("modal-bg").addEventListener("click", (e) => { if (e.target === $("modal-bg")) closeModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+    $("btn-export-json").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(state.filtered, null, 2)], { type: "application/json;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "rejestr_aed_widok.json";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    // Podgląd pliku CSV dostawcy: czy kolumny pasują do wzorcowego zakresu (logika wczytywania z widoku Pauliny)
+    $("csv-upload").addEventListener("change", (ev) => {
+      const f = ev.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const lines = String(reader.result || "").replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim());
+        if (lines.length < 2) return;
+        const sep = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+        const split = (line) => {
+          const out = []; let cur = "", q = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+            else if (ch === sep && !q) { out.push(cur.trim()); cur = ""; }
+            else cur += ch;
+          }
+          out.push(cur.trim());
+          return out;
+        };
+        const headers = split(lines[0]);
+        const known = new Set(schema.map((c) => c.pole));
+        const unknown = headers.filter((h) => !known.has(h));
+        state.all = lines.slice(1).map((l, i) => {
+          const vals = split(l), obj = { _id: `CSV-${i + 1}` };
+          headers.forEach((h, j) => { obj[h] = vals[j] ?? ""; });
+          return obj;
+        });
+        $("source-tag").textContent = `Źródło: plik ${f.name} (${state.all.length} rekordów)` +
+          (unknown.length ? `, kolumny spoza wzorca: ${unknown.join(", ")}` : ", kolumny zgodne ze wzorcem");
+        state.page = 1;
+        populateRegionFilter();
+        applyFilters();
+      };
+      reader.readAsText(f, "utf-8");
+      ev.target.value = "";
+    });
+
+    const onFilter = (id, key) => $(id).addEventListener(id === "f-q" ? "input" : "change", (e) => { state[key] = e.target.value; state.page = 1; applyFilters(); });
+    onFilter("f-q", "q"); onFilter("f-region", "region"); onFilter("f-avail", "avail"); onFilter("f-status", "status"); onFilter("f-dup", "dup");
+    [["chip-unlocked", "onlyUnlocked"], ["chip-outdoor", "onlyOutdoor"], ["chip-247", "only247"]].forEach(([id, key]) =>
+      $(id).addEventListener("click", () => { state[key] = !state[key]; $(id).setAttribute("aria-pressed", String(state[key])); state.page = 1; applyFilters(); }));
+    $("btn-reset").addEventListener("click", () => {
+      Object.assign(state, { q: "", region: "", avail: "", status: "", dup: "", onlyUnlocked: false, onlyOutdoor: false, only247: false, page: 1 });
+      ["f-q", "f-region", "f-avail", "f-status", "f-dup"].forEach((id) => { $(id).value = ""; });
+      ["chip-unlocked", "chip-outdoor", "chip-247"].forEach((id) => $(id).setAttribute("aria-pressed", "false"));
+      applyFilters();
+    });
+    $("page-size").addEventListener("change", (e) => { state.pageSize = +e.target.value; state.page = 1; renderTable(); });
+    $("btn-prev").addEventListener("click", () => { if (state.page > 1) { state.page--; renderTable(); } });
+    $("btn-next").addEventListener("click", () => { state.page++; renderTable(); });
+    $("btn-cols").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const hidden = $("col-menu").classList.toggle("hidden");
+      $("btn-cols").setAttribute("aria-expanded", String(!hidden));
+    });
+    $("col-menu").addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => { $("col-menu").classList.add("hidden"); $("btn-cols").setAttribute("aria-expanded", "false"); });
+    $("btn-cols-default").addEventListener("click", () => { COLUMNS.forEach((c, i) => { c.visible = i < DEFAULT_COLS.length; }); buildColumnMenu(); renderTable(); });
+    document.querySelectorAll(".a11y button[data-scale]").forEach((b) => b.addEventListener("click", () =>
+      document.documentElement.style.setProperty("--font-scale", b.dataset.scale)));
+    $("btn-contrast").addEventListener("click", () => {
+      const on = document.body.classList.toggle("hc");
+      $("btn-contrast").setAttribute("aria-pressed", String(on));
+    });
+
+    // Start: zagregowana tabela z rozwiązania (kolumny chronione tylko dla zalogowanego administratora)
+    fetch("/aed-api/tabela", { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then((r) => { if (!r.ok) throw new Error(`Błąd serwera (${r.status})`); return r.json(); })
+      .then((j) => {
+        role = j.rola;
+        schema = j.kolumny || [];
+        protectedKeys = new Set(schema.filter((c) => c.chroniona).map((c) => c.pole));
+        state.all = j.rekordy || [];
+        $("source-tag").textContent = `Źródło: dane.gov.pl, ${state.all.length} rekordów` + (j.pobrano ? ` (pobrano ${String(j.pobrano).slice(0, 10)})` : "");
+        const rt = $("role-tag");
+        rt.textContent = role === "admin" ? `Administrator: ${schema.length} kolumn, w tym chronione` : `Widok publiczny: ${schema.length} kolumn`;
+        if (role === "admin") rt.classList.add("meta-tag--admin");
+        buildColumns();
+        buildColumnMenu();
+        populateRegionFilter();
+        applyFilters();
+      })
+      .catch((err) => {
+        $("t-info").textContent = "";
+        $("empty-state").textContent = `Nie udało się pobrać tabeli. ${err.message}`;
+        $("empty-state").classList.remove("hidden");
+      });
+  })();
+  </script>
+</body>
+</html>

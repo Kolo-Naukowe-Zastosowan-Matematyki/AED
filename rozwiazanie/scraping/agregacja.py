@@ -119,6 +119,8 @@ def agreguj(records: list, rola: str, chronione=None, data_pobrania: str = "") -
     names = [c["pole"] for c in cols]
     rows = [{k: v for k, v in wiersz(r, c, i in dup, data_pobrania).items() if k in names}
             for i, (r, c) in enumerate(zip(records, ch))]
+    for r, row in zip(records, rows):
+        row["_id"] = r.id_aed  # identyfikator rekordu w rozwiązaniu (nie trafia do CSV/XLSX: nie ma go w tabeli wzorca)
     return cols, rows
 
 

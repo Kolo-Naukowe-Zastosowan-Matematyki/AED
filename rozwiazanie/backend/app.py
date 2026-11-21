@@ -15,6 +15,7 @@ import mimetypes
 import threading
 import time
 import urllib.parse
+from datetime import date
 from http import HTTPStatus
 from pathlib import Path
 
@@ -26,7 +27,8 @@ from rozwiazanie.backend.store import Store
 
 log = logging.getLogger("aed.serwis")
 FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
-PAGES = {"/": "index.html", "/index.html": "index.html", "/rejestr.html": "index.html"}
+PAGES = {"/": "index.html", "/index.html": "index.html", "/rejestr.html": "index.html",
+         "/tabela": "tabela.html", "/tabela.html": "tabela.html"}
 
 
 class SerwisHandler(BaseHandler):
@@ -114,6 +116,11 @@ class SerwisHandler(BaseHandler):
                 return self._json(s.stats())
             if p == "/rejestr.json":  # zasób na portalu dane.gov.pl: zawsze tylko kolumny publiczne
                 return self._json(s.register())
+            if p == "/tabela":  # widok „Tabela”: zagregowana tabela we wzorcowym zakresie, kolumny wg roli
+                cols, rows = s.aggregated_table(role, self.protected)
+                rows = [{k: (v.isoformat() if isinstance(v, date) else v) for k, v in r.items()} for r in rows]
+                return self._json({"rola": role, "kolumny": cols, "rekordy": rows, "liczba": len(rows),
+                                   "pobrano": s.sources_info().get("danegov", {}).get("pobrano")})
             if p == "/export.xlsx":  # wzorcowy zakres; administrator dostaje też kolumny chronione
                 return self._send(s.export_xlsx(role, self.protected),
                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

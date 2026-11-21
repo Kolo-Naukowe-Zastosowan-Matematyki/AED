@@ -165,6 +165,7 @@
       <a class="brand" href="/">Rejestr AED</a>
       <nav class="topbar__links" aria-label="Nawigacja">
         <a href="/mapa">Mapa AED</a>
+        <a href="/tabela">Tabela</a>
         <button class="admin-link" id="admin-toggle" type="button" aria-expanded="false" aria-controls="admin-bar">Administrator</button>
       </nav>
     </div>
@@ -519,7 +520,10 @@
           search();
         }
       });
-      loadRole().then(search);
+      loadRole().then(() => {
+        if (location.hash === "#administrator") adminToggle.click();  // link „Administrator” z widoku Tabela
+        search();
+      });
     })();
   </script>
 </body>

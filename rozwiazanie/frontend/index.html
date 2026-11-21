@@ -440,13 +440,22 @@
         advCount.hidden = n === 0;
         advCount.textContent = String(n);
       }
+      // opcje i liczniki filtrów liczone dla bieżącego miejsca (np. „Legionowo” -> tylko mazowieckie, Legionowo)
+      let filtersReq = 0;
       async function loadFilters() {
         let defs;
+        const req = ++filtersReq;
+        const params = new URLSearchParams();
+        const p = placeParams();
+        if (p.miejsce) params.set("miejsce", p.miejsce);
+        const query = document.getElementById("query").value.trim();
+        if (query && role === "admin") params.set("q", query);
         try {
-          defs = await fetch("/aed-api/filtry", { credentials: "same-origin" }).then((x) => x.json());
+          defs = await fetch(`/aed-api/filtry?${params}`, { credentials: "same-origin" }).then((x) => x.json());
         } catch {
           return;
         }
+        if (req !== filtersReq) return;
         // po wylogowaniu znikają filtry na kolumnach chronionych
         const allowed = new Set([...defs.najwazniejsze.map((f) => f.id),
                                  ...defs.kategorie.flatMap((c) => c.filtry.map((f) => f.id))]);
@@ -499,6 +508,9 @@
             any.value = "";
             any.textContent = "Wszystkie";
             select.append(any);
+            if (state[f.id] && !f.opcje.some((o) => o.wartosc === state[f.id])) {
+              f.opcje.push({ wartosc: state[f.id], etykieta: state[f.id], liczba: 0 });  // wybór spoza bieżących wyników
+            }
             f.opcje.forEach((o) => {
               const opt = document.createElement("option");
               opt.value = o.wartosc;
@@ -858,6 +870,7 @@
           previous.disabled = offset === 0;
           next.disabled = offset + pageSize >= total;
           applyView();
+          loadFilters();
         } catch (error) {
           if (currentRequest !== requestId) return;
           notice.hidden = false;
@@ -1157,20 +1170,25 @@
         const currentRequest = ++requestId;
         mode = { typ: "najblizsze", lat, lon };
         tableSort = { pole: "_odl", dir: 1 };
-        const params = new URLSearchParams({ lat, lon, n: "10", tylko_dostepne: "0" });
+        // w obrębie tego, co wybrano wyżej: miejsce (obszar), fraza i filtry
+        const params = currentParams();
+        params.delete("lat");
+        params.delete("lon");
+        Object.entries({ lat, lon, n: "10", tylko_dostepne: "0" }).forEach(([k, v]) => params.set(k, String(v)));
         try {
           const response = await fetch(`/aed-api/nearest?${params}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
           if (!response.ok) throw new Error(`Błąd serwera (${response.status})`);
           const data = await response.json();
           if (currentRequest !== requestId) return;
-          title.textContent = "Najbliższe AED";
+          const area = params.get("miejsce");
+          title.textContent = area ? `Najbliższe AED: ${area}` : "Najbliższe AED";
           list.replaceChildren();
           data.wyniki.forEach((item) => list.append(resultCard(item)));
           total = data.wyniki.length;
           allItems = data.wyniki;
           count.textContent = total ? `${total} AED` : "";
           notice.hidden = total > 0;
-          notice.textContent = total ? "" : "W pobliżu nie ma AED w rejestrze.";
+          notice.textContent = total ? "" : "Brak AED spełniających wybrane kryteria. Zmień miejsce lub filtry.";
           applyView();
         } catch (error) {
           if (currentRequest !== requestId) return;
@@ -1186,6 +1204,10 @@
         notice.hidden = false;
         if (!navigator.geolocation) {
           notice.textContent = "Ta przeglądarka nie udostępnia lokalizacji. Wpisz adres lub miejscowość.";
+          return;
+        }
+        if (placeParams().lat != null) {  // pozycja już ustalona pinezką w polu miejsca
+          nearestAt(myPos[0], myPos[1]);
           return;
         }
         notice.textContent = "Ustalanie Twojej lokalizacji…";

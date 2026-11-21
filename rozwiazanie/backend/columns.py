@@ -29,6 +29,8 @@ def load_columns(path: Path = COLUMNS_FILE) -> list[dict]:
 COLUMNS = load_columns()
 PUBLIC_FIELDS = [c["pole"] for c in COLUMNS if not c["chroniona"]]
 PROTECTED_FIELDS = [c["pole"] for c in COLUMNS if c["chroniona"]]
+# kolumny chronione podawane przez dostawców (possible_duplicate wylicza agregacja, nie dostawca)
+PROVIDED_PROTECTED_FIELDS = [c["pole"] for c in COLUMNS if c["chroniona"] and c.get("wymagalnosc") != "automatyczne"]
 
 
 def columns_for(role: str) -> list[dict]:
@@ -56,14 +58,14 @@ class ProtectedData:
         rows = raw.get("rekordy", {}) if isinstance(raw, dict) else {}
         with self.lock:
             # tylko kolumny oznaczone w tabeli jako chronione, nic więcej
-            self.values = {str(k): {f: v.get(f, "") for f in PROTECTED_FIELDS}
+            self.values = {str(k): {f: v.get(f, "") for f in PROVIDED_PROTECTED_FIELDS}
                            for k, v in rows.items() if isinstance(v, dict)}
             self.demo = path == DEMO_FILE
         log.info("Dane chronione: %d rekordów (%s)", len(self.values), "demo" if self.demo else path)
 
     def get(self, id_aed: str) -> dict:
         with self.lock:
-            return dict(self.values.get(id_aed) or {f: "" for f in PROTECTED_FIELDS})
+            return dict(self.values.get(id_aed) or {f: "" for f in PROVIDED_PROTECTED_FIELDS})
 
 
 def apply_role(item: dict, role: str, protected: ProtectedData) -> dict:

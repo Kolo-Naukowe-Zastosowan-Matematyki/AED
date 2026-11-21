@@ -27,9 +27,14 @@ class ColumnsTableTest(unittest.TestCase):
         self.assertFalse(set(wsad.MAIN_AED_COLUMNS) & set(wsad.AED_PROTECTED_COLUMNS))
 
     def test_natalia_columns_and_protected(self):
-        self.assertEqual(columns.PUBLIC_FIELDS[:2], ["szerokosc_geograficzna", "dlugosc_geograficzna"])
-        self.assertEqual(columns.PROTECTED_FIELDS, ["numer_seryjny_aed", "data_waznosci_elektrod",
-                                                    "data_waznosci_baterii", "osoba_kontaktowa", "telefon_kontaktowy"])
+        # złoty standard (schemat Oliwii): 20 kolumn, nagłówek CSV w tej kolejności
+        self.assertEqual(";".join(c["pole"] for c in columns.COLUMNS),
+                         "aed_sn;latitude;longitude;region;city;postal_code;street_address;is_indoor;building_name;"
+                         "exact_location;availability_type;opening_hours;is_locked;operational_status;operator_name;"
+                         "pad_expiration_date;battery_expiration_date;record_updated_at;data_source;possible_duplicate")
+        self.assertEqual(len(columns.PUBLIC_FIELDS), 16)
+        self.assertEqual(columns.PROTECTED_FIELDS, ["aed_sn", "pad_expiration_date", "battery_expiration_date",
+                                                    "possible_duplicate"])
 
 
 class ApplyRoleTest(unittest.TestCase):
@@ -40,15 +45,15 @@ class ApplyRoleTest(unittest.TestCase):
             return {f: f"wartosc-{f}" for f in columns.PROTECTED_FIELDS}
 
     def test_public_gets_no_protected(self):
-        item = {"id_aed": "x", "adres": "A", "numer_seryjny_aed": "NIE-POKAZUJ"}
+        item = {"id_aed": "x", "adres": "A", "aed_sn": "NIE-POKAZUJ"}
         out = columns.apply_role(item, columns.ROLE_PUBLIC, self.FakeProtected())
-        self.assertNotIn("numer_seryjny_aed", out)
+        self.assertNotIn("aed_sn", out)
         self.assertNotIn("_chronione", out)
         self.assertEqual(out["adres"], "A")
 
     def test_admin_gets_protected(self):
         out = columns.apply_role({"id_aed": "x"}, columns.ROLE_ADMIN, self.FakeProtected())
-        self.assertEqual(out["numer_seryjny_aed"], "wartosc-numer_seryjny_aed")
+        self.assertEqual(out["aed_sn"], "wartosc-aed_sn")
         self.assertEqual(out["_chronione"], columns.PROTECTED_FIELDS)
 
 
@@ -111,7 +116,7 @@ class HttpEndToEndTest(unittest.TestCase):
         adm = self.get("/search?limit=100", {"Cookie": cookie})
         self.assertEqual(adm["rola"], "admin")
         if adm["wyniki"]:
-            self.assertTrue(set(columns.PROTECTED_FIELDS) <= set(adm["wyniki"][0]))
+            self.assertTrue(set(columns.PROVIDED_PROTECTED_FIELDS) <= set(adm["wyniki"][0]))
         # zasób dla portalu dane.gov.pl zostaje publiczny także dla administratora
         reg = self.get("/rejestr.json", {"Cookie": cookie})
         for rec in reg["rekordy"]:

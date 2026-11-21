@@ -1,39 +1,39 @@
-"""Agregacja: wszystkie rekordy AED z wielu zbiorów dane.gov.pl -> jedna tabela we wzorcowym zakresie.
+"""Agregacja: rekordy AED ze wszystkich zbiorów dane.gov.pl -> jedna tabela w złotym standardzie (schemat Oliwii).
 
-Logika przeniesiona z gałęzi natka_branch (Store.export_xlsx, autorka: Natalia Pośpiech) do scrapingu
-naszego rozwiązania, z poprawkami zgodności z dane.gov.pl (mcod):
-  * wartości logiczne True/False      (mcod settings VERIFICATION_RULES „bool”: „Wymagane wartości: True, False”),
-  * kod pocztowy xx-xxx               (reguła „pna”), liczby z kropką dziesiętną, daty yyyy-mm-dd,
-  * typ dostępności ze słownika       (dostęp to nie godziny: godziny są w osobnej kolumnie),
-  * duplikaty: ten sam numer seryjny albo inny AED w odległości do 15 m,
-  * dane z pamięci podręcznej rozwiązania (bez pobierania API przy każdym eksporcie),
-  * kolumny z tabeli wzorca common/aed_columns.json; kolumny chronione tylko dla administratora.
-
-Kolejność kroków jak w agregacji DGA w mcod (resources/dga_utils.py: create_main_dga_df):
-  1. rekordy ze wszystkich zasobów (scraping/danegov.py: load) -> 2. wiersz wzorcowy dla każdego rekordu
-  -> 3. kolumna dysponenta (nazwa_operatora) -> 4. jeden arkusz / jeden plik CSV.
+Logika eksportu przeniesiona z gałęzi natka_branch (Store.export_xlsx, autorka: Natalia Pośpiech) do scrapingu
+naszego rozwiązania. Wiersze są już ustandaryzowane przy imporcie (standard.py: mapowanie kolumn, słowniki,
+daty, województwo), tutaj tylko:
+  1. kolumny z tabeli wzorca common/aed_columns.json, chronione tylko dla administratora,
+  2. wartości chronione od dostawców (data/chronione) nadpisują puste pola chronione,
+  3. possible_duplicate: ten sam SN więcej niż raz albo inny AED w odległości do 15 m,
+  4. zapis: CSV z separatorem „;” (nagłówek = nazwy techniczne), XLSX jeden arkusz, TRUE/FALSE, RRRR-MM-DD.
+Kolejność kroków jak w agregacji DGA w mcod (resources/dga_utils.py: create_main_dga_df).
 """
 from __future__ import annotations
 
 import csv
 import io
 import math
-import re
 import zipfile
 from datetime import date, datetime
 from xml.sax.saxutils import escape
 
 from rozwiazanie.backend.columns import COLUMNS, ROLE_ADMIN
+from rozwiazanie.scraping.standard import SCHEMA, standaryzuj
 
 DUPLIKAT_M = 15.0
-TYP_DOSTEPNOSCI = {
-    "publiczny": "PUBLICZNY",
-    "w_godzinach": "GODZINY_OTWARCIA",
-    "ograniczony": "TYLKO_PERSONEL",
-    "prywatny": "PRYWATNY",
-    "nieznany": "NIEZNANY",
-}
-_PNA = re.compile(r"\b(\d{2}-\d{3})\s+([^\d,;]+)")
+CSV_SEP = SCHEMA.get("csv", {}).get("separator", ";")
+PRAWDA, FALSZ = SCHEMA.get("csv", {}).get("prawda", "TRUE"), SCHEMA.get("csv", {}).get("falsz", "FALSE")
+_TYPY = {c["pole"]: c["typ"] for c in COLUMNS}
+
+# starsze rekordy z pamięci podręcznej (sprzed standaryzacji) przepuszczamy przez ten sam normalizator
+_AED_KOLUMNY = ["nazwa_obiektu", "opis_lokalizacji", "adres", "szerokosc", "dlugosc", "wewnatrz", "dostep",
+                "godziny_dostepnosci", "dysponent", "data_weryfikacji"]
+_AED_MAPA = {"pola": {"building_name": "nazwa_obiektu", "exact_location": "opis_lokalizacji",
+                      "street_address": "adres", "latitude": "szerokosc", "longitude": "dlugosc",
+                      "is_indoor": "wewnatrz", "availability_type": "dostep", "opening_hours": "godziny_dostepnosci",
+                      "operator_name": "dysponent", "record_updated_at": "data_weryfikacji"},
+             "para": None, "teryt": None}
 
 
 def kolumny(rola: str) -> list[dict]:
@@ -41,107 +41,106 @@ def kolumny(rola: str) -> list[dict]:
     return [c for c in COLUMNS if rola == ROLE_ADMIN or not c["chroniona"]]
 
 
-def _metry(a, b) -> float:
+def _metry(a: dict, b: dict) -> float:
     r = 6371000.0
-    p1, p2 = math.radians(a.szerokosc), math.radians(b.szerokosc)
-    dp, dl = p2 - p1, math.radians(b.dlugosc - a.dlugosc)
+    p1, p2 = math.radians(a["latitude"]), math.radians(b["latitude"])
+    dp, dl = p2 - p1, math.radians(b["longitude"] - a["longitude"])
     h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * r * math.asin(math.sqrt(h))
 
 
-def _duplikaty(records: list, serials: list[str]) -> set[int]:
-    """Indeksy rekordów, które wyglądają na duplikat innego rekordu (siatka ~15 m, bez porównań n^2)."""
+def _duplikaty(rows: list[dict]) -> set[int]:
+    """Indeksy wierszy, które wyglądają na duplikat innego (ten sam SN albo siatka ~15 m, bez porównań n^2)."""
     out: set[int] = set()
     by_serial: dict[str, list[int]] = {}
-    for i, s in enumerate(serials):
-        if s:
-            by_serial.setdefault(s, []).append(i)
+    for i, r in enumerate(rows):
+        if r.get("aed_sn"):
+            by_serial.setdefault(str(r["aed_sn"]).strip().upper(), []).append(i)
     for idxs in by_serial.values():
         if len(idxs) > 1:
             out.update(idxs)
     cell = 0.0002  # ok. 22 m szerokości
     grid: dict[tuple[int, int], list[int]] = {}
-    for i, r in enumerate(records):
-        grid.setdefault((int(r.szerokosc / cell), int(r.dlugosc / cell)), []).append(i)
+    for i, r in enumerate(rows):
+        grid.setdefault((int(r["latitude"] / cell), int(r["longitude"] / cell)), []).append(i)
     for (gy, gx), idxs in grid.items():
         for i in idxs:
             for dy in (-1, 0, 1):
                 for dx in (-1, 0, 1):
                     for j in grid.get((gy + dy, gx + dx), ()):
-                        if j > i and _metry(records[i], records[j]) <= DUPLIKAT_M:
+                        if j > i and _metry(rows[i], rows[j]) <= DUPLIKAT_M:
                             out.update((i, j))
     return out
 
 
-def _data(value: str) -> date | None:
+def _data(value) -> date | None:
+    if isinstance(value, date):
+        return value
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
 
 
-def wiersz(r, chronione: dict | None, duplikat: bool, data_pobrania: str = "") -> dict:
-    """Jeden rekord AED -> wiersz we wzorcowym zakresie (nazwy kolumn z common/aed_columns.json)."""
-    ch = chronione or {}
-    m = _PNA.search(r.adres or "")
-    lokalizacja = ", ".join(x for x in (r.opis_lokalizacji, f"piętro {r.pietro}" if r.pietro else "") if x)
-    return {
-        "numer_seryjny_aed": ch.get("numer_seryjny_aed") or None,
-        "szerokosc_geograficzna": round(r.szerokosc, 6),
-        "dlugosc_geograficzna": round(r.dlugosc, 6),
-        "wojewodztwo": None,
-        "miejscowosc": m.group(2).strip() if m else None,
-        "kod_pocztowy": m.group(1) if m else None,
-        "adres_uliczny": r.adres or None,
-        "wewnatrz_budynku": r.wewnatrz,
-        "nazwa_budynku": r.nazwa_obiektu or None,
-        "dokladna_lokalizacja": lokalizacja or None,
-        "typ_dostepnosci": TYP_DOSTEPNOSCI.get(r.dostep, "NIEZNANY"),
-        "godziny_dostepnosci": r.godziny_dostepnosci or None,
-        "czy_zamkniety": None,
-        "status_operacyjny": "NIEZNANY",
-        "nazwa_operatora": r.dysponent or None,
-        "data_waznosci_elektrod": _data(ch.get("data_waznosci_elektrod")),
-        "data_waznosci_baterii": _data(ch.get("data_waznosci_baterii")),
-        "data_aktualizacji_rekordu": _data(r.data_weryfikacji) or _data(data_pobrania),
-        "zrodlo_danych": r.zrodlo_url or r.zrodlo or None,
-        "mozliwy_duplikat": duplikat,
-        "osoba_kontaktowa": ch.get("osoba_kontaktowa") or None,
-        "telefon_kontaktowy": ch.get("telefon_kontaktowy") or None,
-    }
+def standard_rekordu(r, data_pobrania: str = "") -> dict:
+    """Rekord AED -> wiersz złotego standardu (z importu, a dla starszych rekordów przez ten sam normalizator)."""
+    std = (r.extra or {}).get("std")
+    if std:
+        return dict(std)
+    row = {k: getattr(r, k) for k in _AED_KOLUMNY}
+    rec, _, _ = standaryzuj(row, _AED_MAPA, {"zasob_url": r.zrodlo_url, "pobrano": data_pobrania})
+    return rec or {}
+
+
+def wiersz(r, chronione: dict | None, data_pobrania: str = "") -> dict:
+    """Jeden rekord AED -> wiersz w złotym standardzie (nazwy kolumn z common/aed_columns.json)."""
+    out = standard_rekordu(r, data_pobrania)
+    for k, v in (chronione or {}).items():
+        if v not in (None, "") and k in _TYPY:
+            out[k] = v
+    for k, typ in _TYPY.items():
+        v = out.get(k)
+        if typ == "date":
+            out[k] = _data(v)
+        elif v == "":
+            out[k] = None
+    return out
 
 
 def agreguj(records: list, rola: str, chronione=None, data_pobrania: str = "") -> tuple[list[dict], list[dict]]:
     """Zwraca (kolumny, wiersze) jednej tabeli. `chronione`: obiekt z .get(id_aed) (backend/columns.py)."""
     cols = kolumny(rola)
-    ch = [chronione.get(r.id_aed) if chronione is not None else {} for r in records]
-    dup = _duplikaty(records, [c.get("numer_seryjny_aed", "") for c in ch])
+    full = [wiersz(r, chronione.get(r.id_aed) if chronione is not None else {}, data_pobrania) for r in records]
+    dup = _duplikaty(full)
     names = [c["pole"] for c in cols]
-    rows = [{k: v for k, v in wiersz(r, c, i in dup, data_pobrania).items() if k in names}
-            for i, (r, c) in enumerate(zip(records, ch))]
-    for r, row in zip(records, rows):
-        row["_id"] = r.id_aed  # identyfikator rekordu w rozwiązaniu (nie trafia do CSV/XLSX: nie ma go w tabeli wzorca)
+    rows = []
+    for i, (r, row) in enumerate(zip(records, full)):
+        row["possible_duplicate"] = i in dup
+        out = {k: row.get(k) for k in names}
+        out["_id"] = r.id_aed  # identyfikator rekordu w rozwiązaniu (nie trafia do CSV/XLSX: nie ma go w tabeli wzorca)
+        rows.append(out)
     return cols, rows
 
 
 def _txt(v) -> str:
-    """Zapis wartości wg reguł portalu: True/False, yyyy-mm-dd, kropka dziesiętna, puste = pusta komórka."""
+    """Zapis wartości wg złotego standardu: TRUE/FALSE, RRRR-MM-DD, kropka dziesiętna, puste = pusta komórka."""
     if v is None:
         return ""
     if isinstance(v, bool):
-        return "True" if v else "False"
+        return PRAWDA if v else FALSZ
     if isinstance(v, date):
         return v.isoformat()
     return str(v)
 
 
 def do_csv(cols: list[dict], rows: list[dict]) -> bytes:
+    """CSV do bezpośredniego importu: separator „;”, nagłówek = nazwy techniczne, UTF-8 z BOM (Excel)."""
     buf = io.StringIO()
-    w = csv.writer(buf, lineterminator="\r\n")
+    w = csv.writer(buf, delimiter=CSV_SEP, lineterminator="\r\n")
     w.writerow([c["pole"] for c in cols])
     for row in rows:
         w.writerow([_txt(row.get(c["pole"])) for c in cols])
-    return ("﻿" + buf.getvalue()).encode("utf-8")
+    return ("\ufeff" + buf.getvalue()).encode("utf-8")
 
 
 def do_xlsx(cols: list[dict], rows: list[dict]) -> bytes:
@@ -168,7 +167,7 @@ def _xlsx_openpyxl(cols, rows) -> bytes:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1F4E78")
     for row in rows:
-        # bool jako tekst True/False (reguła portalu), daty jako daty, liczby jako liczby
+        # bool jako tekst TRUE/FALSE (złoty standard), daty jako daty, liczby jako liczby
         ws.append([_txt(v) if isinstance(v, bool) else v for v in (row.get(c["pole"]) for c in cols)])
     ws.freeze_panes = "A2"
     ws.sheet_view.showGridLines = False

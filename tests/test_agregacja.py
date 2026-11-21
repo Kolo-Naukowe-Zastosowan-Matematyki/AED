@@ -36,36 +36,39 @@ RECS = [
 
 class AgregacjaTest(unittest.TestCase):
     def test_public_table(self):
-        cols, rows = ag.agreguj(RECS, "publiczny", FakeProtected({"a1": {"numer_seryjny_aed": "SN-1"}}), "2026-11-21T10:00")
+        cols, rows = ag.agreguj(RECS, "publiczny", FakeProtected({"a1": {"aed_sn": "SN-1"}}), "2026-11-21T10:00")
         names = [c["pole"] for c in cols]
         self.assertEqual(names, columns.PUBLIC_FIELDS)
-        self.assertNotIn("numer_seryjny_aed", rows[0])
+        self.assertNotIn("aed_sn", rows[0])
+        self.assertNotIn("possible_duplicate", rows[0])                 # kolumna chroniona
         r = rows[0]
-        self.assertEqual((r["kod_pocztowy"], r["miejscowosc"]), ("00-950", "Warszawa"))
-        self.assertEqual(r["typ_dostepnosci"], "PUBLICZNY")          # dostęp to nie godziny
-        self.assertEqual(r["godziny_dostepnosci"], "Mo-Fr 08:00-16:00")
-        self.assertEqual(r["dokladna_lokalizacja"], "hol, piętro 1")
-        self.assertEqual(rows[1]["typ_dostepnosci"], "GODZINY_OTWARCIA")
-        self.assertEqual([x["mozliwy_duplikat"] for x in rows], [True, True, False])  # a1 i a2 < 15 m
-        self.assertEqual(str(rows[2]["data_aktualizacji_rekordu"]), "2026-11-21")  # data pobrania, gdy brak weryfikacji
+        self.assertEqual((r["postal_code"], r["city"], r["street_address"]), ("00-950", "Warszawa", "ul. Długa 1"))
+        self.assertEqual(r["region"], "mazowieckie")                     # z kodu pocztowego
+        self.assertEqual(r["availability_type"], "24/7")                 # słownik złotego standardu
+        self.assertEqual(r["opening_hours"], "Mo-Fr 08:00-16:00")
+        self.assertEqual(r["operational_status"], "NIEZNANY")
+        self.assertEqual(rows[1]["availability_type"], "GODZINY_OTWARCIA")
+        self.assertEqual(str(rows[2]["record_updated_at"]), "2026-11-21")  # data pobrania, gdy brak weryfikacji
 
-    def test_admin_table_and_serial_duplicates(self):
-        prot = FakeProtected({"a1": {"numer_seryjny_aed": "SN-9"}, "a3": {"numer_seryjny_aed": "SN-9",
-                                                                        "data_waznosci_elektrod": "2027-01-31"}})
+    def test_admin_table_and_duplicates(self):
+        prot = FakeProtected({"a1": {"aed_sn": "SN-9"}, "a3": {"aed_sn": "SN-9", "pad_expiration_date": "2027-01-31"}})
         cols, rows = ag.agreguj(RECS, "admin", prot)
         self.assertEqual([c["pole"] for c in cols], [c["pole"] for c in columns.COLUMNS])
-        self.assertEqual(rows[2]["numer_seryjny_aed"], "SN-9")
-        self.assertTrue(rows[2]["mozliwy_duplikat"])  # ten sam numer seryjny co a1
-        self.assertEqual(str(rows[2]["data_waznosci_elektrod"]), "2027-01-31")
+        self.assertEqual(rows[2]["aed_sn"], "SN-9")
+        self.assertEqual([x["possible_duplicate"] for x in rows], [True, True, True])  # a1~a2 < 15 m, a1=a3 ten sam SN
+        self.assertEqual(str(rows[2]["pad_expiration_date"]), "2027-01-31")
 
-    def test_csv_follows_portal_rules(self):
-        body = ag.do_csv(*ag.agreguj(RECS, "publiczny")).decode("utf-8-sig")
-        rows = list(csv.DictReader(io.StringIO(body)))
-        self.assertEqual(rows[0]["wewnatrz_budynku"], "True")       # reguła bool: True/False
-        self.assertEqual(rows[2]["wewnatrz_budynku"], "False")
-        self.assertEqual(rows[1]["wewnatrz_budynku"], "")
-        self.assertEqual(rows[0]["szerokosc_geograficzna"], "52.2297")  # kropka dziesiętna
-        self.assertEqual(rows[0]["data_aktualizacji_rekordu"], "2026-10-01")
+    def test_csv_golden_standard(self):
+        body = ag.do_csv(*ag.agreguj(RECS, "admin", FakeProtected({}))).decode("utf-8-sig")
+        header = body.splitlines()[0]
+        self.assertTrue(header.startswith("aed_sn;latitude;longitude;region;city;postal_code;street_address;is_indoor"))
+        rows = list(csv.DictReader(io.StringIO(body), delimiter=";"))
+        self.assertEqual(rows[0]["is_indoor"], "TRUE")
+        self.assertEqual(rows[2]["is_indoor"], "FALSE")
+        self.assertEqual(rows[1]["is_indoor"], "")
+        self.assertEqual(rows[0]["latitude"], "52.2297")                 # kropka dziesiętna
+        self.assertEqual(rows[0]["record_updated_at"], "2026-10-01")
+        self.assertEqual(rows[2]["possible_duplicate"], "FALSE")
 
     def test_xlsx_single_sheet_both_writers(self):
         cols, rows = ag.agreguj(RECS, "publiczny")

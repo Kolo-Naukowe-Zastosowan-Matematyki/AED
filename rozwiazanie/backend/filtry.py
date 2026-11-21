@@ -39,6 +39,9 @@ KATEGORIE = [
     ("Dysponent i jakość danych", [("operator_name", "wybor"), ("possible_duplicate", "tak_nie"),
                                    ("aed_sn", "jest")]),
 ]
+# kategorie widoczne w całości tylko w panelu administratora (także ich filtry po kolumnach jawnych, np. dysponent)
+KATEGORIE_ADMIN = {"Dysponent i jakość danych"}
+FILTRY_ADMIN = {pole for nazwa, pola in KATEGORIE if nazwa in KATEGORIE_ADMIN for pole, _ in pola}
 ETYKIETY_TAK_NIE = {"is_locked": ("Wymaga klucza lub kodu", "Bez klucza i kodu"),
                     "is_indoor": ("Wewnątrz budynku", "Na zewnątrz"),
                     "possible_duplicate": ("Możliwy duplikat", "Bez duplikatu")}
@@ -95,7 +98,7 @@ def aktywne(params: dict, rola: str) -> dict[str, str]:
         if pole == "otwarte_teraz":
             if dozwolone("opening_hours", rola):
                 out[pole] = v
-        elif dozwolone(pole, rola):
+        elif dozwolone(pole, rola) and (rola == ROLE_ADMIN or pole not in FILTRY_ADMIN):
             out[pole] = v
     return out
 
@@ -124,6 +127,8 @@ def definicje(rows: list[dict], rola: str) -> dict:
             f["liczba"] = sum(1 for r in rows if wartosc(r, f["pole"], RODZAJE.get(f["pole"], "wybor"), dzis) == f["wartosc"])
     kategorie = []
     for nazwa, pola in KATEGORIE:
+        if nazwa in KATEGORIE_ADMIN and rola != ROLE_ADMIN:
+            continue
         filtry = []
         for pole, rodzaj in pola:
             if not dozwolone(pole, rola):

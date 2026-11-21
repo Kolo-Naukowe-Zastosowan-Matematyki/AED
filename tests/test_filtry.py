@@ -19,14 +19,17 @@ ROWS = [
 
 class FiltryTest(unittest.TestCase):
     def test_public_cannot_filter_protected(self):
-        params = {"f.possible_duplicate": "TRUE", "f.aed_sn": "TRUE", "f.region": "małopolskie", "inne": "x"}
+        params = {"f.possible_duplicate": "TRUE", "f.aed_sn": "TRUE", "f.region": "małopolskie", "inne": "x",
+                  "f.operator_name": "Urząd"}
         self.assertEqual(filtry.aktywne(params, "publiczny"), {"region": "małopolskie"})
-        self.assertEqual(set(filtry.aktywne(params, "admin")), {"possible_duplicate", "aed_sn", "region"})
+        self.assertEqual(set(filtry.aktywne(params, "admin")), {"possible_duplicate", "aed_sn", "region", "operator_name"})
 
     def test_definitions_by_role(self):
         pub = filtry.definicje(ROWS, "publiczny")
         ids = {f["pole"] for c in pub["kategorie"] for f in c["filtry"]}
-        self.assertFalse(ids & {"aed_sn", "possible_duplicate", "pad_expiration_date", "battery_expiration_date"})
+        self.assertFalse(ids & {"aed_sn", "possible_duplicate", "pad_expiration_date", "battery_expiration_date",
+                                "operator_name"})
+        self.assertNotIn("Dysponent i jakość danych", [c["nazwa"] for c in pub["kategorie"]])  # tylko administrator
         self.assertEqual(pub["najwazniejsze"][0]["etykieta"], "Dostępny 24/7")
         adm = filtry.definicje(ROWS, "admin")
         ids = {f["pole"] for c in adm["kategorie"] for f in c["filtry"]}

@@ -11,6 +11,3 @@ data/chronione/
 data/rejestr_aed.xlsx
 data/rejestr_aed.csv
 data/diagnoza.json
-
-# pamięć podręczna geokodera (generowana lokalnie)
-data/cache/geokod.json

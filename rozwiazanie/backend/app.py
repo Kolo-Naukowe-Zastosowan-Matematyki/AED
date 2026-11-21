@@ -109,12 +109,15 @@ class SerwisHandler(BaseHandler):
                 res = s.search(q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", ""), q.get("dostep", ""),
                                q.get("zrodlo", ""), q.get("publiczny", "0") == "1", limit, offset,
                                filtry=active_filters(q, role),
-                               protected=self.protected if role == ROLE_ADMIN else None)
+                               protected=self.protected if role == ROLE_ADMIN else None,
+                               lat=_liczba(q.get("lat")), lon=_liczba(q.get("lon")))
                 res["wyniki"] = [visible(r) for r in res["wyniki"]]
                 res["rola"] = role
                 return self._json(res)
             if p == "/filtry":  # definicje filtrów dla roli (kolumny chronione tylko dla administratora)
-                return self._json(s.filter_defs(role, self.protected if role == ROLE_ADMIN else None))
+                # opcje i liczniki dla bieżącego wyszukiwania (fraza tylko administratora, miejsce)
+                return self._json(s.filter_defs(role, self.protected if role == ROLE_ADMIN else None,
+                                                q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", "")))
             if p == "/podpowiedzi":  # podpowiedzi do pola adresu: miejscowości, ulice, województwa, kody
                 return self._json({"podpowiedzi": s.suggest(q.get("q", ""), min(int(q.get("n", 8)), 15))})
             if p == "/points":
@@ -123,8 +126,12 @@ class SerwisHandler(BaseHandler):
                 d = s.detail(int(p.rsplit("/", 1)[1]))
                 return self._json(visible(d)) if d else self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
             if p == "/nearest":
+                # w obrębie kryteriów z wyszukiwarki: miejsce, fraza (administrator) i filtry dozwolone dla roli
+                kryteria = {"query": q.get("q", "") if role == ROLE_ADMIN else "", "location": q.get("miejsce", ""),
+                            "filtry": active_filters(q, role),
+                            "protected": self.protected if role == ROLE_ADMIN else None}
                 res = s.nearest(float(q["lat"]), float(q["lon"]), min(int(q.get("n", 3)), 20),
-                                q.get("tylko_dostepne", "1") != "0")
+                                q.get("tylko_dostepne", "1") != "0", **kryteria)
                 return self._json({"wyniki": [visible(r) for r in res], "rola": role})
             if p == "/sources":
                 return self._json(s.sources_info())
@@ -167,6 +174,13 @@ class SerwisHandler(BaseHandler):
                 threading.Thread(target=s.refresh_danegov, daemon=True).start()
                 return self._json({"ok": True}, HTTPStatus.ACCEPTED)
         self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
+
+
+def _liczba(v) -> float | None:
+    try:
+        return float(v) if v not in (None, "") else None
+    except ValueError:
+        return None
 
 
 def setup(base: Path, cfg: dict, offline: bool):

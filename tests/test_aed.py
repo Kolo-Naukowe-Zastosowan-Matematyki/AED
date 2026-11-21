@@ -173,5 +173,23 @@ class StoreSearchTest(unittest.TestCase):
         self.assertLess(near[0]["odleglosc_m"], 2000)
 
 
+    def test_whole_country_and_distance_order(self):
+        self.assertEqual(self.store.search(location="Polska")["razem"], 3)  # domyślna wartość pola miejsca
+        res = self.store.search(lat=50.01, lon=19.91)
+        self.assertEqual(res["wyniki"][0]["id_aed"], "aed-3")
+        self.assertIn("odleglosc_m", res["wyniki"][0])
+
+    def test_nearest_within_criteria(self):
+        near = self.store.nearest(50.01, 19.91, n=1, only_available=False, location="Warszawa")
+        self.assertEqual(near[0]["id_aed"], "aed-1")  # najbliższe w wybranym miejscu, nie w ogóle
+
+    def test_filter_options_follow_location(self):
+        def dostepnosc(defs):
+            f = next(f for c in defs["kategorie"] for f in c["filtry"] if f["pole"] == "availability_type")
+            return {o["wartosc"]: o["liczba"] for o in f["opcje"] if o["liczba"]}
+        self.assertEqual(sum(dostepnosc(self.store.filter_defs("publiczny")).values()), 3)
+        self.assertEqual(dostepnosc(self.store.filter_defs("publiczny", location="Kraków")), {"24/7": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

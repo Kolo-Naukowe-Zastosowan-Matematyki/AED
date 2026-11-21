@@ -160,13 +160,22 @@ class Store:
             d["standard"] = dict(self.std[idx]) if idx < len(self.std) else {}  # kolumny chronione usuwa app.visible
             return d
 
-    def filter_defs(self, role: str, protected=None) -> dict:
+    def _z_chronionymi(self, idxs, protected) -> list[dict]:
+        rows = []
+        for i in idxs:
+            row = self.std[i]
+            if protected is not None:
+                row = {**row, **{k: v for k, v in protected.get(self.records[i].id_aed).items() if v not in ("", None)}}
+            rows.append(row)
+        return rows
+
+    def filter_defs(self, role: str, protected=None, query: str = "", location: str = "") -> dict:
+        """Opcje i liczniki filtrów liczone dla bieżącego wyszukiwania (fraza i miejsce), nie dla całego rejestru:
+        po wpisaniu „Legionowo” lista województw i miejscowości pokazuje tylko to, co jest w wynikach."""
         from .filtry import definicje
         with self.lock:
-            rows = list(self.std)
-            ids = [r.id_aed for r in self.records]
-        if protected is not None:
-            rows = [{**row, **{k: v for k, v in protected.get(i).items() if v not in ("", None)}} for row, i in zip(rows, ids)]
+            idxs = self.matching(query, location, protected=protected)
+            rows = self._z_chronionymi(idxs, protected)
         return definicje(rows, role)
 
     def suggest(self, phrase: str, limit: int = 8) -> list[dict]:
@@ -180,14 +189,17 @@ class Store:
         normalized = unicodedata.normalize("NFKD", value.casefold().replace("ł", "l"))
         return "".join(char for char in normalized if not unicodedata.combining(char))
 
-    def search(self, query: str = "", location: str = "", access: str = "", source: str = "",
-               public_only: bool = False, limit: int = 25, offset: int = 0, filtry: dict | None = None,
-               protected=None) -> dict:
-        """Wyszukiwanie. `filtry`: {pole: wartość} już przefiltrowane wg roli (backend/filtry.py: aktywne).
-        `protected`: dane chronione (tylko dla administratora) dołączane do wiersza przed filtrowaniem."""
+    CALY_KRAJ = ("", "polska")  # domyślna wartość pola miejsca: cały rejestr
+
+    def matching(self, query: str = "", location: str = "", access: str = "", source: str = "",
+                 public_only: bool = False, filtry: dict | None = None, protected=None) -> list[int]:
+        """Indeksy rekordów pasujących do kryteriów. `filtry`: {pole: wartość} już przefiltrowane wg roli
+        (backend/filtry.py: aktywne). `protected`: dane chronione (tylko administrator) dołączane przed filtrowaniem."""
         from .filtry import pasuje
         query = self._search_text(query.strip())
         location = self._search_text(location.strip())
+        if location in self.CALY_KRAJ:
+            location = ""
         filtry = filtry or {}
         now = datetime.now()
         with self.lock:
@@ -216,44 +228,59 @@ class Store:
                     continue
                 if public_only and record.dostep != "publiczny":
                     continue
-
-                fields = record.to_dict()
-                fields["zbior"] = record.extra.get("zbior", "")
-                if protected is not None:  # numer seryjny szuka tylko administrator
-                    fields["aed_sn"] = protected.get(record.id_aed).get("aed_sn", "") or self.std[idx].get("aed_sn", "")
-                searchable = self._search_text(" ".join(str(value) for value in fields.values()))
-                if query and query not in searchable:
-                    continue
+                if query:
+                    fields = record.to_dict()
+                    fields["zbior"] = record.extra.get("zbior", "")
+                    if protected is not None:  # numer seryjny szuka tylko administrator
+                        fields["aed_sn"] = protected.get(record.id_aed).get("aed_sn", "") or self.std[idx].get("aed_sn", "")
+                    if query not in self._search_text(" ".join(str(value) for value in fields.values())):
+                        continue
                 st = self.std[idx]
-                place_text = self._search_text(" ".join((
-                    record.adres, record.opis_lokalizacji, record.nazwa_obiektu,
-                    str(record.extra.get("zbior", "")), st.get("city", ""), st.get("region", ""),
-                    st.get("postal_code", ""), st.get("street_address", ""),
-                )))
                 if exact_field:
                     if self._search_text(str(st.get(exact_field) or "")) != location:
                         continue
-                elif location and location not in place_text:
-                    continue
+                elif location:
+                    place_text = self._search_text(" ".join((
+                        record.adres, record.opis_lokalizacji, record.nazwa_obiektu,
+                        str(record.extra.get("zbior", "")), st.get("city", ""), st.get("region", ""),
+                        st.get("postal_code", ""), st.get("street_address", ""),
+                    )))
+                    if location not in place_text:
+                        continue
                 matches.append(idx)
+            return matches
 
+    def search(self, query: str = "", location: str = "", access: str = "", source: str = "",
+               public_only: bool = False, limit: int = 25, offset: int = 0, filtry: dict | None = None,
+               protected=None, lat: float | None = None, lon: float | None = None) -> dict:
+        """Wyszukiwanie (kryteria jak w matching). Z lat/lon wyniki są posortowane od najbliższego."""
+        with self.lock:
+            matches = self.matching(query, location, access, source, public_only, filtry, protected)
+            dist = {}
+            if lat is not None and lon is not None:
+                dist = {i: haversine_m(lat, lon, self.records[i].szerokosc, self.records[i].dlugosc) for i in matches}
+                matches.sort(key=dist.get)
             total = len(matches)
-            results = [self.detail(idx) for idx in matches[offset:offset + limit]]
+            results = []
+            for idx in matches[offset:offset + limit]:
+                d = self.detail(idx)
+                if dist:
+                    d["odleglosc_m"] = round(dist[idx])
+                results.append(d)
             return {"wyniki": results, "razem": total, "limit": limit, "offset": offset}
 
-    def nearest(self, lat: float, lon: float, n: int = 3, only_available: bool = True) -> list[dict]:
+    def nearest(self, lat: float, lon: float, n: int = 3, only_available: bool = True, **kryteria) -> list[dict]:
+        """Najbliższe AED. `kryteria` (query, location, filtry, protected…) zawężają kandydatów do tego, co
+        wybrano w wyszukiwarce, np. najbliższe dostępne 24/7 w powiecie legionowskim."""
         now = datetime.now()
         with self.lock:
+            idxs = self.matching(**kryteria) if kryteria else range(len(self.records))
             cand = []
-            dlat = 0.05  # ~5,5 km – najpierw zawężenie prostokątem, potem rozszerzanie
-            while not cand and dlat < 3:
-                dlon = dlat / max(0.2, math.cos(math.radians(lat)))
-                for i, r in enumerate(self.records):
-                    if abs(r.szerokosc - lat) <= dlat and abs(r.dlugosc - lon) <= dlon:
-                        if only_available and (r.dostep == "prywatny" or self._open_code(r, now) == 0):
-                            continue
-                        cand.append((haversine_m(lat, lon, r.szerokosc, r.dlugosc), i))
-                dlat *= 3
+            for i in idxs:
+                r = self.records[i]
+                if only_available and (r.dostep == "prywatny" or self._open_code(r, now) == 0):
+                    continue
+                cand.append((haversine_m(lat, lon, r.szerokosc, r.dlugosc), i))
             cand.sort()
             out = []
             for dist, i in cand[:n]:

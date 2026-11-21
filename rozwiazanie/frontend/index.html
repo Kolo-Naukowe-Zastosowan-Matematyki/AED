@@ -168,6 +168,10 @@
     .rtable tr.groups th { background: #e9eef2; color: #3d4954; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
       border-bottom: 0; border-left: 2px solid #fff; }
     .rtable .grp-start { border-left: 2px solid #d5dbe0; }
+    .rtable .grp-toggle { all: unset; cursor: pointer; white-space: nowrap; }
+    .rtable .grp-toggle:hover { color: var(--blue); text-decoration: underline; }
+    .rtable .grp-toggle:focus-visible { outline: 3px solid #ffc400; }
+    .rtable .is-collapsed { color: #9aa5ae; text-align: center; min-width: 28px; }
     .rtable td:first-child, .rtable th:first-child { position: sticky; left: 0; background: inherit; }
     .rtable tbody tr { background: #fff; }
     .rtable tbody tr:hover { background: #f4f9fd; }
@@ -896,12 +900,21 @@
         if (it.wewnatrz === true || it.wewnatrz === false) out.is_indoor = it.wewnatrz;
         return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined && v !== null && v !== ""));
       }
+      // grupy kolumn zwijane kliknięciem nagłówka; „Informacje dodatkowe” domyślnie zwinięte
+      const collapsedGroups = new Set(["Informacje dodatkowe"]);
       function renderTable(items) {
         if (view !== "tabela") return;
-        const cols = tableColumns();
+        const allCols = tableColumns();
+        // zwinięta grupa: zamiast jej kolumn jedna wąska kolumna-zakładka
+        const cols = [];
+        allCols.forEach((c) => {
+          const g = groupOf(c.pole);
+          if (!collapsedGroups.has(g)) cols.push(c);
+          else if (!cols.some((x) => x.zwinieta === g)) cols.push({ pole: `_grupa:${g}`, zwinieta: g, nazwa: "", typ: "string" });
+        });
         const table = document.getElementById("rtable");
         const rows = items.map((it) => ({ ...legacyStandard(it), ...(it.standard || {}), _nazwa: it.nazwa_obiektu, _odl: it.odleglosc_m }));
-        if (!cols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: "city", dir: 1 };
+        if (!allCols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: "city", dir: 1 };
         const key = tableSort.pole;
         rows.sort((a, b) => (key === "_odl" ? (a._odl - b._odl)
           : String(a[key] ?? "").localeCompare(String(b[key] ?? ""), "pl", { numeric: true })) * tableSort.dir);
@@ -911,12 +924,25 @@
         groupRow.className = "groups";
         const starts = new Set();
         cols.forEach((c, i) => {
-          const g = groupOf(c.pole);
-          if (i > 0 && groupOf(cols[i - 1].pole) === g) { groupRow.lastChild.colSpan += 1; return; }
+          const gOf = (x) => x.zwinieta || groupOf(x.pole);
+          const g = gOf(c);
+          if (i > 0 && gOf(cols[i - 1]) === g) { groupRow.lastChild.colSpan += 1; return; }
           starts.add(i);
           const th = document.createElement("th");
           th.scope = "colgroup";
-          th.textContent = g;
+          const open = !collapsedGroups.has(g);
+          const n = allCols.filter((x) => groupOf(x.pole) === g).length;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "grp-toggle";
+          btn.setAttribute("aria-expanded", String(open));
+          btn.title = open ? `Zwiń grupę „${g}”` : `Rozwiń grupę „${g}” (${n} kolumn)`;
+          btn.textContent = `${open ? "▾" : "▸"} ${g}${open ? "" : ` (${n})`}`;
+          btn.addEventListener("click", () => {
+            if (open) collapsedGroups.add(g); else collapsedGroups.delete(g);
+            renderTable(items);
+          });
+          th.append(btn);
           groupRow.append(th);
         });
         const thead = document.createElement("tr");
@@ -925,6 +951,7 @@
           th.scope = "col";
           if (c.chroniona) { th.className = "is-protected"; th.title = "Kolumna chroniona: widoczna tylko dla administratora"; }
           if (i > 0 && starts.has(i)) th.classList.add("grp-start");
+          if (c.zwinieta) { th.classList.add("is-collapsed"); thead.append(th); return; }
           const btn = document.createElement("button");
           btn.type = "button";
           btn.textContent = c.nazwa.replace(/\?$/, "") + (key === c.pole ? (tableSort.dir > 0 ? " ▲" : " ▼") : "");
@@ -945,6 +972,7 @@
             const td = document.createElement("td");
             if (c.chroniona) td.className = "is-protected";
             if (i > 0 && starts.has(i)) td.classList.add("grp-start");
+            if (c.zwinieta) { td.className = "is-collapsed"; td.textContent = "…"; tr.append(td); return; }
             if (c.typ === "number" || c.typ === "date") td.classList.add("num");
             let v = c.pole === "building_name" ? (r.building_name || r._nazwa) : r[c.pole];
             if (c.pole === "_odl" && v != null) v = v < 1000 ? `${v} m` : `${(v / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
@@ -961,7 +989,7 @@
           body.append(tr);
         });
         document.getElementById("table-info").textContent =
-          `${rows.length.toLocaleString("pl-PL")} AED · ${cols.length} kolumn${role === "admin" ? " (w tym chronione)" : " jawnych"}`;
+          `${rows.length.toLocaleString("pl-PL")} AED · ${allCols.length} kolumn${role === "admin" ? " (w tym chronione)" : " jawnych"}`;
         const nav = document.getElementById("table-pages");
         nav.hidden = pages <= 1;
         document.getElementById("t-label").textContent = `Strona ${tablePage} z ${pages}`;

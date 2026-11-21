@@ -112,6 +112,10 @@ class SerwisHandler(BaseHandler):
                 res["wyniki"] = [visible(r) for r in res["wyniki"]]
                 res["rola"] = role
                 return self._json(res)
+            if p == "/filtry":  # definicje filtrów dla roli (kolumny chronione tylko dla administratora)
+                return self._json(s.filter_defs(role, self.protected if role == ROLE_ADMIN else None))
+            if p == "/podpowiedzi":  # podpowiedzi do pola adresu: miejscowości, ulice, województwa, kody
+                return self._json({"podpowiedzi": s.suggest(q.get("q", ""), min(int(q.get("n", 8)), 15))})
             if p == "/points":
                 return self._send(s.points_json(), "application/json", extra={"Cache-Control": "no-store"})
             if p.startswith("/aed/"):

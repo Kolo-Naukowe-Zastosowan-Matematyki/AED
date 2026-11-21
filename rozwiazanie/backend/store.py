@@ -152,6 +152,21 @@ class Store:
             d["standard"] = dict(self.std[idx]) if idx < len(self.std) else {}  # kolumny chronione usuwa app.visible
             return d
 
+    def filter_defs(self, role: str, protected=None) -> dict:
+        from .filtry import definicje
+        with self.lock:
+            rows = list(self.std)
+            ids = [r.id_aed for r in self.records]
+        if protected is not None:
+            rows = [{**row, **{k: v for k, v in protected.get(i).items() if v not in ("", None)}} for row, i in zip(rows, ids)]
+        return definicje(rows, role)
+
+    def suggest(self, phrase: str, limit: int = 8) -> list[dict]:
+        from .filtry import podpowiedzi
+        with self.lock:
+            rows = list(self.std)
+        return podpowiedzi(rows, phrase, limit)
+
     @staticmethod
     def _search_text(value: str) -> str:
         normalized = unicodedata.normalize("NFKD", value.casefold().replace("ł", "l"))

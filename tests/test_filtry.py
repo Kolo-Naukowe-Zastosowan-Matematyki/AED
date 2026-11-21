@@ -1,4 +1,4 @@
-"""Filtry rejestru wynikające z tabeli kolumn chronionych."""
+"""Filtry rejestru wynikające z tabeli kolumn chronionych i podpowiedzi do pola adresu."""
 import sys
 import unittest
 from pathlib import Path
@@ -38,6 +38,12 @@ class FiltryTest(unittest.TestCase):
         self.assertTrue(filtry.pasuje(ROWS[0], {"pad_expiration_date": "przeterminowane"}))
         self.assertTrue(filtry.pasuje(ROWS[2], {"pad_expiration_date": "brak"}))
 
+    def test_suggestions(self):
+        out = filtry.podpowiedzi(ROWS, "Kra")
+        self.assertEqual([o["tekst"] for o in out[:2]], ["Kraków", "Kraśnik"])
+        self.assertEqual(filtry.podpowiedzi(ROWS, "krak")[0]["tekst"], "Kraków")   # bez polskich znaków i wielkości liter
+        self.assertEqual(filtry.podpowiedzi(ROWS, "38-4")[0]["typ"], "kod pocztowy")
+        self.assertEqual(filtry.podpowiedzi(ROWS, "K"), [])
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import logging
 import math
 import threading
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -152,6 +153,42 @@ class Store:
             d["zbior"] = r.extra.get("zbior", "")
             d["idx"] = idx
             return d
+
+    @staticmethod
+    def _search_text(value: str) -> str:
+        normalized = unicodedata.normalize("NFKD", value.casefold().replace("ł", "l"))
+        return "".join(char for char in normalized if not unicodedata.combining(char))
+
+    def search(self, query: str = "", location: str = "", access: str = "", source: str = "",
+               public_only: bool = False, limit: int = 25, offset: int = 0) -> dict:
+        query = self._search_text(query.strip())
+        location = self._search_text(location.strip())
+        with self.lock:
+            matches = []
+            for idx, record in enumerate(self.records):
+                if access and record.dostep != access:
+                    continue
+                if source and record.zrodlo != source:
+                    continue
+                if public_only and record.dostep != "publiczny":
+                    continue
+
+                fields = record.to_dict()
+                fields["zbior"] = record.extra.get("zbior", "")
+                searchable = self._search_text(" ".join(str(value) for value in fields.values()))
+                if query and query not in searchable:
+                    continue
+                place_text = self._search_text(" ".join((
+                    record.adres, record.opis_lokalizacji, record.nazwa_obiektu,
+                    str(record.extra.get("zbior", "")),
+                )))
+                if location and location not in place_text:
+                    continue
+                matches.append(idx)
+
+            total = len(matches)
+            results = [self.detail(idx) for idx in matches[offset:offset + limit]]
+            return {"wyniki": results, "razem": total, "limit": limit, "offset": offset}
 
     def nearest(self, lat: float, lon: float, n: int = 3, only_available: bool = True) -> list[dict]:
         now = datetime.now()

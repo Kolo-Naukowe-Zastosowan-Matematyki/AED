@@ -57,6 +57,7 @@ API modułu:
 | --- | --- |
 | `GET /aed-api/points` | wszystkie punkty w formacie kompaktowym dla mapy |
 | `GET /aed-api/aed/{idx}` | pełny rekord |
+| `GET /aed-api/search` | wyszukiwanie i filtrowanie rekordów rejestru AED |
 | `GET /aed-api/nearest?lat=..&lon=..&n=3&tylko_dostepne=1` | najbliższe AED, np. dla dyspozytora |
 | `GET /aed-api/stats`, `GET /aed-api/sources` | liczniki oraz stan źródeł i raport pobierania |
 | `POST /aed-api/refresh` | ponowne pobranie z dane.gov.pl |
@@ -94,6 +95,7 @@ Ekrany modułu:
 | `/pl/aed/pomoc` | pierwsza pomoc krok po kroku, metronom 110/min, link do „Stayin’ Alive” |
 | `/pl/aed/zglos` | zgłoszenie AED w trzech krokach: zdjęcie, miejsce, opis |
 | `/pl/aed/dane` | źródła, eksport zbioru, instrukcja dla instytucji „jak opublikować dane o AED w dane.gov.pl” |
+| `/rejestr.html` | osobna wyszukiwarka rejestru AED, z filtrami, szczegółami lokalizacji i odnośnikami do źródeł |
 
 Tryb ratunkowy nie jest zasłaniany modalem RODO portalu przy pierwszej wizycie (modal pokaże się przy następnej zwykłej wizycie).
 

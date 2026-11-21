@@ -101,6 +101,12 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET":
             if p == "/points":
                 return self._send(s.points_json(), "application/json", extra={"Cache-Control": "no-store"})
+            if p == "/search":
+                limit = min(max(int(q.get("limit", 25)), 1), 100)
+                offset = max(int(q.get("offset", 0)), 0)
+                public_only = q.get("publiczny", "0") == "1"
+                return self._json(s.search(q.get("q", ""), q.get("miejsce", ""), q.get("dostep", ""),
+                                           q.get("zrodlo", ""), public_only, limit, offset))
             if p.startswith("/aed/"):
                 d = s.detail(int(p.rsplit("/", 1)[1]))
                 return self._json(d) if d else self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
@@ -140,19 +146,24 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------ frontend portalu
     def _static(self, path: str):
         dist = self.dist
-        if not (dist / "index.html").exists():
+        if path == "/rejestr.html":
+            target = dist.parent.parent / "rejestr.html"
+            if not target.is_file():
+                return self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
+        elif not (dist / "index.html").exists():
             msg = ("<h1>Brak zbudowanego frontendu</h1><p>Uruchom <code>python frontend/build.py</code> "
                    "albo skopiuj katalog <code>frontend/dist</code>. API modułu działa pod <a href='/aed-api/stats'>"
                    "/aed-api/stats</a>.</p>").encode()
             return self._send(msg, "text/html; charset=utf-8", HTTPStatus.SERVICE_UNAVAILABLE)
-        rel = urllib.parse.unquote(path).lstrip("/")
-        target = (dist / rel).resolve() if rel else dist / "index.html"
-        if dist.resolve() not in target.parents and target != dist / "index.html" or not target.is_file():
-            target = dist / "index.html"  # routing aplikacji Angular (np. /pl/aed)
+        else:
+            rel = urllib.parse.unquote(path).lstrip("/")
+            target = (dist / rel).resolve() if rel else dist / "index.html"
+            if dist.resolve() not in target.parents and target != dist / "index.html" or not target.is_file():
+                target = dist / "index.html"  # routing aplikacji Angular (np. /pl/aed)
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
-        cache = "no-cache" if target.name == "index.html" else "public, max-age=31536000, immutable"
+        cache = "no-cache" if target.name in ("index.html", "rejestr.html") else "public, max-age=31536000, immutable"
         self._send(target.read_bytes(), ctype, extra={"Cache-Control": cache})
 
 

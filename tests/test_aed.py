@@ -3,6 +3,7 @@
 Uruchomienie:  python -m unittest discover -s tests -v
 """
 import sys
+import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scraping import danegov as dg  # noqa: E402
 from backend.hours import is_open  # noqa: E402
+from backend.schema import AED  # noqa: E402
+from backend.store import Store  # noqa: E402
 
 SAT_10 = datetime(2026, 11, 21, 10, 0)   # sobota
 MON_10 = datetime(2026, 11, 23, 10, 0)   # poniedziałek
@@ -83,6 +86,35 @@ class DaneGovTest(unittest.TestCase):
         self.assertEqual((szkola.szerokosc, szkola.dlugosc), (54.352, 18.6466))  # X/Y rozpoznane i zamienione
         self.assertEqual(szkola.opis_lokalizacji, "hol przy portierni")
         self.assertEqual(len(report), 2)
+
+
+class StoreSearchTest(unittest.TestCase):
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.store = Store(Path(self.tempdir.name), {})
+        self.store.by_source["danegov"] = [
+            AED("aed-1", 52.2, 21.0, "danegov", "", "", nazwa_obiektu="Szkoła Łódzka",
+                adres="ul. Główna 1, Warszawa", dostep="publiczny", extra={"zbior": "Rejestr AED"}),
+            AED("aed-2", 52.3, 21.1, "danegov", "", "", nazwa_obiektu="Przychodnia",
+                adres="ul. Krótka 2, Warszawa", dostep="w_godzinach"),
+        ]
+        self.store.by_source["osm"] = [
+            AED("osm-1", 50.0, 19.9, "osm", "", "", nazwa_obiektu="Szkoła Kraków",
+                adres="Rynek, Kraków", dostep="publiczny"),
+        ]
+        self.store._rebuild()
+
+    def test_search_ignores_accents_and_filters_location(self):
+        result = self.store.search(query="szkola", location="lodzka")
+        self.assertEqual(result["razem"], 1)
+        self.assertEqual(result["wyniki"][0]["id_aed"], "aed-1")
+
+    def test_search_filters_access_source_and_paginates(self):
+        result = self.store.search(access="publiczny", source="danegov", limit=1)
+        self.assertEqual(result["razem"], 1)
+        self.assertEqual([item["id_aed"] for item in result["wyniki"]], ["aed-1"])
+        self.assertEqual(self.store.search(public_only=True)["razem"], 2)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+{
+  "danegov": {
+    "enabled": true,
+    "queries": ["defibrylator", "defibrylatory", "AED defibrylator"],
+    "dataset_ids": [],
+    "resource_ids": []
+  },
+  "osm": {
+    "enabled": true,
+    "path": "../material/PL.geojson"
+  }
+}

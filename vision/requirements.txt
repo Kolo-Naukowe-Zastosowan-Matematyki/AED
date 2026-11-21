@@ -1,0 +1,4 @@
+Pillow>=10.0
+# Opcjonalnie, dokładniejsza ocena zero-shot (duże pobranie, ok. 600 MB z PyTorch):
+# transformers>=4.40
+# torch

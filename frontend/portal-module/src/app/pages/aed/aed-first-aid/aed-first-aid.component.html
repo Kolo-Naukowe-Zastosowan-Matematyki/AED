@@ -1,0 +1,41 @@
+<ol class="fa-steps" [class.fa-steps--compact]="compact">
+  <li>
+    <span class="fa-num" aria-hidden="true">1</span>
+    <div><strong>Zadzwoń na <a href="tel:112" class="fa-tel">112</a></strong> i włącz tryb głośnomówiący.</div>
+  </li>
+  <li>
+    <span class="fa-num" aria-hidden="true">2</span>
+    <div><strong>Uciskaj klatkę piersiową</strong>: środek klatki, mocno i szybko, 100–120 razy na minutę.</div>
+  </li>
+  <li>
+    <span class="fa-num" aria-hidden="true">3</span>
+    <div><strong>Druga osoba biegnie po AED, nie ty.</strong> Dyspozytor pomoże znaleźć defibrylator.</div>
+  </li>
+  @if (!compact) {
+    <li>
+      <span class="fa-num" aria-hidden="true">4</span>
+      <div><strong>Włącz AED i wykonuj jego polecenia.</strong> Urządzenie samo ocenia, czy potrzebne jest wyładowanie.</div>
+    </li>
+  }
+</ol>
+
+<div class="fa-metro">
+  <button type="button" class="aed-btn" [class.aed-btn--sos]="!running()" [class.aed-btn--ghost]="running()"
+          [attr.aria-pressed]="running()" (click)="toggle()">
+    {{ running() ? '■ Zatrzymaj rytm' : '▶ Rytm uciśnięć 110/min' }}
+  </button>
+  <span class="fa-pulse" [class.is-beat]="beat()" aria-hidden="true"></span>
+</div>
+
+@if (!compact) {
+  <p class="fa-note">
+    Rytm jak w piosence
+    <a href="https://www.youtube.com/results?search_query=Bee+Gees+Stayin%27+Alive+official+video" target="_blank" rel="noopener">
+      „Stayin’ Alive” (Bee Gees, oficjalne nagranie w serwisie YouTube)</a>.
+  </p>
+  <p class="fa-note aed-muted">
+    Treść skrócona, do weryfikacji z aktualnymi wytycznymi
+    <a href="https://cprguidelines.eu" target="_blank" rel="noopener">Europejskiej Rady Resuscytacji</a>.
+    Nie zastępuje szkolenia z pierwszej pomocy.
+  </p>
+}

@@ -112,7 +112,7 @@
    "typ": "string",
    "wymagana": false,
    "chroniona": false,
-   "opis": "Słownik: SPRAWNY, W_SERWISIE, WYCOFANY, NIEZNANY"
+   "opis": "Słownik: SPRAWNY, W_SERWISIE, NIESPRAWNY, NIEZNANY"
   },
   {
    "pole": "nazwa_operatora",

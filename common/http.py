@@ -45,7 +45,8 @@ class BaseHandler(BaseHTTPRequestHandler):
         if gz:
             self.send_header("Content-Encoding", "gzip")
         for k, v in (extra or {}).items():
-            self.send_header(k, v)
+            for one in (v if isinstance(v, list) else [v]):  # lista: nagłówek powtórzony (np. kilka Set-Cookie)
+                self.send_header(k, one)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)

@@ -346,8 +346,11 @@ def mapuj_kolumny(columns: list[str], rows: list[dict], geo_roles: dict[str, str
                 continue
             for s in names:
                 if len(s) > 3 and (s in n.split("_") or s in n):
-                    cands.append((len(s), pole, col, s))
-    for _, pole, col, s in sorted(cands, reverse=True):
+                    cands.append((len(s), -POLA.index(pole), pole, col, s))
+                elif len(n) >= 5 and len(s) > len(n) and s.startswith(n):
+                    # nazwa obcięta (shapefile/DBF: 10 znaków), np. „lokalizacj”: im mniej ucięte, tym pewniejsze
+                    cands.append((len(n) - 0.1 * (len(s) - len(n)), -POLA.index(pole), pole, col, s))
+    for _, _, pole, col, s in sorted(cands, reverse=True):
         take(pole, col, f"nazwa zawiera „{s}”")
 
     # 4) kontrola po wartościach: współrzędne muszą być liczbami

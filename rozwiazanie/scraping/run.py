@@ -7,7 +7,7 @@
     python -m rozwiazanie.scraping.run --offline --xlsx  -> to samo z pamięci podręcznej, bez internetu
     python -m rozwiazanie.scraping.run --geokoduj -> pobiera jak wyżej i dopytuje GUGiK o brakujące adresy (osobny,
                                                      opcjonalny krok; wyniki w data/cache/geokod.json do commita)
-    python -m rozwiazanie.scraping.run --szukaj   -> tylko wypisuje, jakie zbiory zwraca wyszukiwarka dane.gov.pl
+    python -m rozwiazanie.scraping.run --szukaj   -> tylko wypisuje zbiory i zasoby AED z wyszukiwarki dane.gov.pl
     python -m rozwiazanie.scraping.run --diagnoza -> pobiera i zapisuje do data/diagnoza.json nagłówki i pierwsze
                                                      wiersze każdego zasobu, z którego nie udało się wczytać AED
 
@@ -43,11 +43,13 @@ if __name__ == "__main__":
         from rozwiazanie.scraping import danegov
         traf: list = []
         zbiory = danegov.find_datasets(cfg.get("danegov", {}), traf)
+        zasoby = danegov.find_resources(cfg.get("danegov", {}), {t[1] for t in traf if t[3]}, traf)
         for q in dict.fromkeys(t[0] for t in traf):
             print(f"„{q}”: {sum(1 for t in traf if t[0] == q)} wyników")
         for did, tytul, ok in sorted({(t[1], t[2], t[3]) for t in traf}, key=lambda t: (not t[2], t[1])):
-            print(("  AED  " if ok else "  inne ") + f"{did:>7}  {tytul}")
-        print(f"Zbiory AED: {len(zbiory)}")
+            if ok:  # pozostałe trafienia (setki) tylko w liczbach powyżej
+                print(f"  AED  {did:>9}  {tytul}")
+        print(f"Zbiory AED: {len(zbiory)}; osobne zasoby AED (z:id) spoza tych zbiorów: {len(zasoby)}")
         raise SystemExit
     if args.geokoduj:
         cfg.setdefault("danegov", {}).update(geokodowanie=True, geokodowanie_limit=args.geokoduj)

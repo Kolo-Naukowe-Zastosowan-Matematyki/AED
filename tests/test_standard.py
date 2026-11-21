@@ -186,6 +186,20 @@ class WyszukiwanieTest(unittest.TestCase):
         self.assertEqual([d["id"] for d in found], ["9"])     # „Raedwald” nie jest zbiorem AED
         self.assertIn(("AED", "7", "Raedwald – rejestr zabytków", False), traf)
 
+    def test_search_finds_aed_resource_in_other_dataset(self):
+        # Legionowo: „Wykaz defibrylatorów AED” to zasób w zbiorze o ogólnej nazwie; bierzemy tylko ten zasób
+        from unittest import mock
+        from rozwiazanie.scraping import danegov as dg
+        zasoby = [{"id": "501", "attributes": {"title": "Wykaz defibrylatorów AED wraz z lokalizacją"},
+                   "relationships": {"dataset": {"data": {"id": "77"}}}},
+                  {"id": "502", "attributes": {"title": "Defibrylatory w Markach"},
+                   "relationships": {"dataset": {"data": {"id": "4955"}}}}]
+
+        def get_json(url, timeout=25):
+            return {"data": zasoby if "/resources?q=" in url else [], "links": {}}
+        with mock.patch.object(dg, "_get_json", side_effect=get_json):
+            self.assertEqual(dg.find_resources({}, {"4955"}), ["501"])  # zbiór Marek już jest w wynikach
+
 
 class OdwrotneTest(unittest.TestCase):
     def test_reverse_tries_axis_variants_and_remembers(self):
@@ -399,6 +413,8 @@ class WidokiTest(unittest.TestCase):
         def get_json(url, timeout=25):
             if "/datasets?q=" in url:
                 return {"data": [ds], "links": {}}
+            if "/resources?q=" in url:
+                return {"data": [], "links": {}}
             return res
 
         with mock.patch.object(dg, "_get_json", side_effect=get_json), \

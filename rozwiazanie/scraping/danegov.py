@@ -1,8 +1,8 @@
 """Źródło główne: zbiory o AED opublikowane w dane.gov.pl, pobierane przez publiczne API 1.4.
 
 Przepływ:
-  1. wyszukanie zbiorów (/datasets?q=...) – frazy z config.json,
-     plus zbiory i zasoby wskazane wprost (dataset_ids / resource_ids),
+  1. wyszukanie zbiorów (/datasets?q=...) i zasobów (/resources?q=...: wykaz AED bywa zasobem w zbiorze
+     o innej nazwie), plus zbiory i zasoby wskazane wprost w config.json (dataset_ids / resource_ids),
   2. lista zasobów zbioru (/datasets/{id}/resources),
   3. odczyt: widok tabelaryczny /resources/{id}/data, a gdy go nie ma albo nic z niego nie wyszło – sam plik
      (czytniki.py: CSV/XLSX/ODS/XLS/JSON/GeoJSON/XML/KML/ZIP, format rozpoznawany po zawartości),
@@ -147,7 +147,7 @@ def _license_of(dataset: dict) -> str:
 
 
 def _relevant(dataset: dict) -> bool:
-    blob = " ".join(_text(_attr(dataset, k)) for k in ("title", "notes", "keywords")).lower()
+    blob = " ".join(_text(_attr(dataset, k)) for k in ("title", "notes", "description", "keywords")).lower()
     tags = _attr(dataset, "tags", "keywords", default=[])
     if isinstance(tags, list):
         blob += " " + " ".join(_text(t.get("name") if isinstance(t, dict) else t) for t in tags).lower()
@@ -182,6 +182,26 @@ def find_datasets(cfg: dict, trafienia: list | None = None) -> list[dict]:
         except Exception as exc:  # noqa: BLE001
             log.warning("Nie udało się pobrać zbioru %s: %s", did, exc)
     return list(found.values())
+
+
+def find_resources(cfg: dict, znane_zbiory: set[str], trafienia: list | None = None) -> list[str]:
+    """Zasoby o AED w zbiorach, których wyszukiwarka zbiorów nie znalazła (np. „Wykaz defibrylatorów AED”
+    w zbiorze urzędu miasta o ogólnej nazwie). Bierzemy tylko te zasoby, nie cały zbiór."""
+    found: dict[str, None] = {}
+    queries = list(dict.fromkeys(QUERIES + list(cfg.get("queries", []))))
+    for q in queries:
+        try:
+            for body in _paged(f"{API}/resources?q={urllib.parse.quote(q)}", max_pages=3):
+                for res in body.get("data", []):
+                    ok = _relevant(res)
+                    ds_id = str((((res.get("relationships") or {}).get("dataset") or {}).get("data") or {}).get("id", ""))
+                    if trafienia is not None:
+                        trafienia.append((q, f"z:{res['id']}", re.sub(r"<[^>]+>", "", _text(_attr(res, "title"))), ok))
+                    if ok and ds_id not in znane_zbiory:
+                        found[str(res["id"])] = None
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Wyszukiwanie zasobów „%s” w dane.gov.pl nie powiodło się: %s", q, exc)
+    return list(found)
 
 
 def _miasto_z_instytucji(name: str) -> str:
@@ -273,7 +293,8 @@ def load(cfg: dict, progress=lambda msg: None, geokoder=None) -> tuple[list[AED]
     records: list[AED] = []
     report: list[dict] = []
     datasets = find_datasets(cfg)
-    progress(f"Znaleziono zbiorów: {len(datasets)}")
+    extra_resources = find_resources(cfg, {str(d["id"]) for d in datasets})
+    progress(f"Znaleziono zbiorów: {len(datasets)}, osobnych zasobów: {len(extra_resources)}")
     jobs: list[tuple[dict, dict]] = []
     for ds in datasets:
         try:
@@ -281,7 +302,7 @@ def load(cfg: dict, progress=lambda msg: None, geokoder=None) -> tuple[list[AED]
                 jobs += [(ds, r) for r in body.get("data", [])]
         except Exception as exc:  # noqa: BLE001
             report.append({"zbior": _text(_attr(ds, "title")), "blad": str(exc)})
-    for rid in cfg.get("resource_ids", []):
+    for rid in list(dict.fromkeys(list(cfg.get("resource_ids", [])) + extra_resources)):
         try:
             res = _get_json(f"{API}/resources/{rid}")["data"]
             ds_id = ((res.get("relationships") or {}).get("dataset") or {}).get("data", {}).get("id")

@@ -104,8 +104,8 @@ class SerwisHandler(BaseHandler):
             if p == "/search":
                 limit = min(max(int(q.get("limit", 25)), 1), 100)
                 offset = max(int(q.get("offset", 0)), 0)
-                # filtry po kolumnach chronionych: tylko administrator (wymuszone tu)
-                res = s.search(q.get("q", ""), q.get("miejsce", ""), q.get("dostep", ""),
+                # „Nazwa obiektu lub numer AED” i filtry po kolumnach chronionych: tylko administrator (wymuszone tu)
+                res = s.search(q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", ""), q.get("dostep", ""),
                                q.get("zrodlo", ""), q.get("publiczny", "0") == "1", limit, offset,
                                filtry=active_filters(q, role),
                                protected=self.protected if role == ROLE_ADMIN else None)

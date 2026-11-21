@@ -60,7 +60,6 @@ DEFAULTS = {
 
 # Kolumny widoku tabelarycznego rejestru: (pole rekordu, nagłówek, typ)
 TABLE = [
-    ("id_aed", "Identyfikator AED", "string"),
     ("nazwa_obiektu", "Nazwa obiektu", "string"),
     ("adres", "Adres", "string"),
     ("opis_lokalizacji", "Opis lokalizacji", "string"),

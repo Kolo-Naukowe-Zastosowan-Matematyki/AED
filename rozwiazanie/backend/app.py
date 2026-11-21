@@ -134,7 +134,8 @@ class SerwisHandler(BaseHandler):
                 return self._json(s.register())
             if p == "/tabela":  # widok „Tabela”: zagregowana tabela we wzorcowym zakresie, kolumny wg roli
                 cols, rows = s.aggregated_table(role, self.protected)
-                rows = [{k: (v.isoformat() if isinstance(v, date) else v) for k, v in r.items()} for r in rows]
+                # bez wewnętrznego identyfikatora rekordu (_id): nie pokazujemy go w interfejsie ani eksportach
+                rows = [{k: (v.isoformat() if isinstance(v, date) else v) for k, v in r.items() if k != "_id"} for r in rows]
                 return self._json({"rola": role, "kolumny": cols, "rekordy": rows, "liczba": len(rows),
                                    "pobrano": s.sources_info().get("danegov", {}).get("pobrano")})
             if p == "/export.xlsx":  # wzorcowy zakres; administrator dostaje też kolumny chronione

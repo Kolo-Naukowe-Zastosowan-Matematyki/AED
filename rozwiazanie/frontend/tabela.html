@@ -112,7 +112,6 @@
     tbody tr:hover { background: #f1f6fa; }
     tbody td { padding: 11px 12px; vertical-align: top; }
     td.is-protected { background: #fffaf0; }
-    .cell-id { font-family: Consolas, monospace; font-size: 13px; font-weight: 700; color: var(--navy); white-space: nowrap; }
     .cell-main { font-weight: 650; color: #202b34; }
     .cell-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
     .cell-loc { max-width: 300px; }
@@ -337,9 +336,9 @@
 
   <script>
   (() => {
-    // 8 domyślnych kolumn (układ z widoku Pauliny); pozostałe przychodzą z tabeli wzorca /aed-api/tabela
+    // domyślne kolumny (układ z widoku Pauliny): najpierw lokalizacja, potem najważniejsze, potem dodatkowe;
+    // pozostałe przychodzą z tabeli wzorca /aed-api/tabela. Wewnętrzny identyfikator rekordu nie jest pokazywany.
     const DEFAULT_COLS = [
-      { key: "_id", label: "Identyfikator" },
       { key: "city", label: "Miejscowość i adres" },
       { key: "building_name", label: "Obiekt i dokładne miejsce" },
       { key: "availability_type", label: "Dostępność" },
@@ -366,7 +365,7 @@
       const inDefault = new Set(DEFAULT_COLS.map((c) => c.key).concat(["region", "street_address", "postal_code",
         "exact_location", "is_indoor", "opening_hours"]));
       // kolumny chronione (np. possible_duplicate) tylko gdy serwer je przysłał, czyli dla administratora
-      COLUMNS = DEFAULT_COLS.filter((c) => c.key === "_id" || schema.some((x) => x.pole === c.key))
+      COLUMNS = DEFAULT_COLS.filter((c) => schema.some((x) => x.pole === c.key))
         .map((c) => ({ ...c, group: "Podstawowe (domyślne)", visible: true }))
         .concat(schema.filter((c) => !inDefault.has(c.pole) || ["region", "street_address", "postal_code", "opening_hours", "is_indoor"].includes(c.pole))
           .filter((c) => !DEFAULT_COLS.some((d) => d.key === c.pole))
@@ -387,7 +386,6 @@
     function indoor(v) { return yes(v) ? "Wewnątrz" : no(v) ? "Na zewnątrz" : ""; }
 
     function renderCell(row, key) {
-      if (key === "_id") return `<span class="cell-id">${esc(row._id)}</span>`;
       if (key === "city") {
         const sub = [row.region, row.street_address, row.postal_code].filter(Boolean).map(esc).join(" · ");
         return `<div class="cell-main">${esc(row.city || "—")}</div>${sub ? `<div class="cell-sub">${sub}</div>` : ""}`;
@@ -442,7 +440,7 @@
         if (state.onlyOutdoor && !no(r.is_indoor)) return false;
         if (state.only247 && r.availability_type !== "24/7") return false;
         if (q) {
-          const hay = [r._id, r.region, r.city, r.street_address, r.building_name, r.exact_location,
+          const hay = [r.region, r.city, r.street_address, r.building_name, r.exact_location,
                        r.operator_name, r.postal_code].join(" ").toLocaleLowerCase("pl");
           if (!hay.includes(q)) return false;
         }
@@ -492,7 +490,7 @@
       const slice = state.filtered.slice(start, start + state.pageSize);
       const maxPage = Math.max(1, Math.ceil(total / state.pageSize));
       $("empty-state").classList.toggle("hidden", total > 0);
-      $("t-body").innerHTML = slice.map((row, i) => `<tr data-idx="${start + i}" tabindex="0" aria-label="Pokaż szczegóły ${esc(row._id)}">
+      $("t-body").innerHTML = slice.map((row, i) => `<tr data-idx="${start + i}" tabindex="0" aria-label="Pokaż szczegóły: ${esc([row.street_address, row.city].filter(Boolean).join(", ") || "AED")}">
           ${vis.map((c) => `<td class="${protectedKeys.has(c.key) ? "is-protected" : ""}">${renderCell(row, c.key)}</td>`).join("")}
           <td><button type="button" class="detail-btn">Pełne dane</button></td></tr>`).join("");
       $("t-body").querySelectorAll("tr").forEach((tr) => {
@@ -512,8 +510,8 @@
 
     function openModal(row) {
       if (!row) return;
-      $("modal-title").textContent = row.building_name || row.operator_name || row._id;
-      $("modal-sub").innerHTML = `ID: <code>${esc(row._id)}</code> · ${esc([row.street_address, row.postal_code, row.city, row.region].filter(Boolean).join(", "))}`;
+      $("modal-title").textContent = row.building_name || row.street_address || row.city || "Defibrylator AED";
+      $("modal-sub").textContent = [row.street_address, row.postal_code, row.city, row.region].filter(Boolean).join(", ");
       const sections = [
         ["Lokalizacja (WGS84)", [["Województwo", val(row.region)], ["Miejscowość", val(row.city)],
           ["Kod pocztowy", val(row.postal_code)], ["Adres", val(row.street_address)], ["Wewnątrz budynku", val(indoor(row.is_indoor))],
@@ -550,7 +548,8 @@
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
     $("btn-export-json").addEventListener("click", () => {
-      const blob = new Blob([JSON.stringify(state.filtered, null, 2)], { type: "application/json;charset=utf-8" });
+      const rows = state.filtered.map(({ _id, ...rest }) => rest);  // bez wewnętrznego identyfikatora
+      const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json;charset=utf-8" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = "rejestr_aed_widok.json";
@@ -582,7 +581,7 @@
         const known = new Set(schema.map((c) => c.pole));
         const unknown = headers.filter((h) => !known.has(h));
         state.all = lines.slice(1).map((l, i) => {
-          const vals = split(l), obj = { _id: `CSV-${i + 1}` };
+          const vals = split(l), obj = {};
           headers.forEach((h, j) => { obj[h] = vals[j] ?? ""; });
           return obj;
         });

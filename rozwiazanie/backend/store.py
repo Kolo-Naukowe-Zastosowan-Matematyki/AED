@@ -305,6 +305,6 @@ class Store:
 
     def export_geojson(self) -> bytes:
         feats = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [r.dlugosc, r.szerokosc]},
-                  "properties": {k: v for k, v in r.to_dict().items() if k not in ("szerokosc", "dlugosc")}}
+                  "properties": {k: v for k, v in r.to_dict().items() if k not in ("szerokosc", "dlugosc", "id_aed")}}
                  for r in self.export_records()]
         return json.dumps({"type": "FeatureCollection", "features": feats}, ensure_ascii=False).encode()

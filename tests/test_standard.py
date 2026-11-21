@@ -57,6 +57,21 @@ class CzytnikiTest(unittest.TestCase):
         self.assertEqual(r["street_address"], "al. Józefa Piłsudskiego 95, Marki")  # przecinek w adresie
         self.assertEqual(recs[1]["street_address"], "ul. Szkolna 2")
 
+    def test_legionowo_address_in_parts(self):
+        # zbiór Legionowa: ulica rozbita na cecha_ulicy, nazwa_ulicy, nr_budynku, nr_lokalu
+        raw = (Path(__file__).parent / "dane" / "legionowo.csv").read_bytes()
+        recs, entry, _ = run(raw)
+        self.assertEqual(len(recs), 24)
+        r = recs[0]
+        self.assertEqual((r["building_name"], r["city"], r["postal_code"]), ("Urząd Miasta Legionowo", "Legionowo", "05-120"))
+        self.assertEqual(r["street_address"], "ul. Piłsudskiego 41")
+        self.assertEqual(recs[14]["street_address"], "al. 1 Dywizji Zmechanizowanej 16")
+        self.assertEqual(recs[9]["building_name"], 'Pływalnia "Wodne Piaski"')
+        self.assertEqual(r["region"], "mazowieckie")
+        self.assertNotIn("nazwa_ulicy", entry["nierozpoznane_kolumny"])
+        row = {"c": "ulica", "u": "Długa", "n": "5", "l": "3"}
+        self.assertEqual(standard.adres_z_czesci(row, {"cecha": "c", "ulica": "u", "nr": "n", "lokal": "l"}), "ul. Długa 5/3")
+
     def test_point_far_from_dataset_is_reported_not_changed(self):
         raw = ("Nazwa;Szerokosc;Dlugosc\nUrząd;52,3267;21,1076\nSzkoła;52,3240;21,0982\n"
                "Basen;52,3170;21,1041\nHala;49,7188;21,7203\n").encode("utf-8")

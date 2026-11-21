@@ -330,6 +330,27 @@ def _udzial(values: list, test) -> float:
     return sum(1 for v in values if test(v)) / len(values) if values else 0.0
 
 
+CZESCI_ADRESU = {
+    "cecha": {"cecha_ulicy", "cecha", "typ_ulicy", "rodzaj_ulicy"},
+    "ulica": {"nazwa_ulicy", "ulica_nazwa", "ulicy", "nazwa_ul", "ul"},
+    "nr": {"nr_budynku", "numer_budynku", "nr_domu", "numer_domu", "nr_porzadkowy", "numer_porzadkowy", "numer", "nr"},
+    "lokal": {"nr_lokalu", "numer_lokalu", "lokal"},
+}
+CECHY = {"ulica": "ul.", "ul": "ul.", "aleja": "al.", "al": "al.", "aleje": "al.", "plac": "pl.", "pl": "pl.",
+         "osiedle": "os.", "os": "os.", "rondo": "rondo", "skwer": "skwer", "bulwar": "bulw.", "wybrzeże": "wyb."}
+
+
+def adres_z_czesci(row: dict, czesci: dict) -> str:
+    """„ulica”, „Piłsudskiego”, „41”, „2” -> „ul. Piłsudskiego 41/2”."""
+    t = {k: tekst(row.get(c)) for k, c in czesci.items()}
+    if not t.get("ulica"):
+        return ""
+    cecha = CECHY.get(t.get("cecha", "").lower().rstrip("."), t.get("cecha", ""))
+    nr = t.get("nr", "") + (f"/{t['lokal']}" if t.get("nr") and t.get("lokal") else "")
+    ulica = t["ulica"] if cecha and t["ulica"].lower().startswith(cecha.lower()) else f"{cecha} {t['ulica']}"
+    return " ".join(x for x in (ulica.strip(), nr) if x)
+
+
 def mapuj_kolumny(columns: list[str], rows: list[dict], geo_roles: dict[str, str] | None = None) -> dict:
     """Zwraca {"pola": {pole_standardu: kolumna_źródła}, "para": kolumna z parą współrzędnych | None,
     "nierozpoznane": [...], "uwagi": [...]}."""
@@ -455,7 +476,19 @@ def mapuj_kolumny(columns: list[str], rows: list[dict], geo_roles: dict[str, str
     teryt = next((c for c in columns if c not in used and "teryt" in normed[c]), None)
     if teryt:
         used.add(teryt)
-    return {"pola": mapping, "para": pair_col, "teryt": teryt, "uwagi": uwagi,
+    czesci = {}
+    if "street_address" not in mapping:
+        # adres w osobnych kolumnach (np. Legionowo: cecha_ulicy, nazwa_ulicy, nr_budynku, nr_lokalu)
+        for rola, nazwy in CZESCI_ADRESU.items():
+            col = next((c for c in columns if c not in used and normed[c] in nazwy), None)
+            if col:
+                czesci[rola] = col
+        if "ulica" in czesci:
+            used.update(czesci.values())
+            uwagi.append("street_address <- " + " + ".join(f"„{c}”" for c in czesci.values()) + " (adres w częściach)")
+        else:
+            czesci = {}
+    return {"pola": mapping, "para": pair_col, "teryt": teryt, "uwagi": uwagi, "czesci_adresu": czesci,
             "nierozpoznane": [c for c in columns if c not in used and not c.startswith("_")]}
 
 
@@ -471,7 +504,7 @@ def standaryzuj(row: dict, mapa: dict, ctx: dict, geokoder=None) -> tuple[dict |
     rec = {p: "" for p in POLA}
 
     rec["aed_sn"] = g("aed_sn")
-    rec["street_address"] = g("street_address")
+    rec["street_address"] = g("street_address") or adres_z_czesci(row, mapa.get("czesci_adresu") or {})
     rec["city"] = g("city")
     rec["postal_code"] = kod_pocztowy(g("postal_code"))
     addr_all = " ".join(x for x in (rec["street_address"], rec["city"], g("postal_code")) if x)

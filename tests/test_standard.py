@@ -196,6 +196,11 @@ class StandardTest(unittest.TestCase):
         recs, _, _ = run(raw)
         self.assertEqual([r["building_name"] for r in recs], ["", "Ratusz"])
 
+    def test_generic_building_name_dropped(self):
+        raw = "Nazwa;Lokalizacja;Szerokosc;Dlugosc\nDefibrylator;OSP Turaszówka;49,7188;21,7203\n".encode("utf-8")
+        recs, _, _ = run(raw)
+        self.assertEqual((recs[0]["building_name"], recs[0]["exact_location"]), ("", "OSP Turaszówka"))
+
     def test_coordinate_formats(self):
         self.assertEqual(standard.wspolrzedne("52,2297", "21,0122")[:2], (52.2297, 21.0122))
         self.assertEqual(standard.wspolrzedne("21.0122", "52.2297")[2], "zamienione lat/lon")

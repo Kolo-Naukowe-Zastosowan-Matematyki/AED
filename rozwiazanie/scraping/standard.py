@@ -312,6 +312,7 @@ def _synonimy() -> dict[str, list[str]]:
 # pola opisujące miejsce konkretnego AED: długie elaboraty i teksty wspólne dla całego zbioru są odrzucane
 OPISOWE = ("building_name", "exact_location", "street_address", "opening_hours")
 MAX_OPIS = 300
+OGOLNE_NAZWY = {"defibrylator", "aed", "defibrylator_aed", "aed_defibrylator", "automatyczny_defibrylator_zewnetrzny"}
 
 
 def _probka(rows: list[dict], col: str, n: int = 200) -> list:
@@ -527,6 +528,8 @@ def standaryzuj(row: dict, mapa: dict, ctx: dict, geokoder=None) -> tuple[dict |
     rec["region"] = rec["region"] or woj_z_pna(rec["postal_code"]) or ctx.get("wojewodztwo", "")
 
     rec["building_name"] = g("building_name")
+    if norm(rec["building_name"]) in OGOLNE_NAZWY:
+        rec["building_name"] = ""  # „Defibrylator” w kolumnie nazwy nic nie mówi o miejscu
     rec["exact_location"] = g("exact_location")
     rec["is_indoor"] = logiczna(g("is_indoor"))
     if rec["is_indoor"] is None:

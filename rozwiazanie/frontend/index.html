@@ -178,6 +178,7 @@
     }
     .result__top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
     .result h3 { margin: 0; color: #202b34; font-size: 18px; }
+    .result__id { color: #687889; font-size: 13px; font-weight: 400; font-family: Consolas, monospace; }
     .badge { padding: 4px 9px; background: #e6f3eb; color: #176239; border-radius: 2px; font-size: 12px; font-weight: 700; }
     .badge--unknown { background: #eef0f2; color: #4d5962; }
     .admin-link { border: 0; background: none; color: var(--blue); font-weight: 650; cursor: pointer; padding: 0; }
@@ -653,7 +654,11 @@
         card.className = "result";
         const top = document.createElement("div");
         top.className = "result__top";
-        appendText(top, "h3", "", text(item.nazwa_obiektu, `Defibrylator AED — ${text(item.id_aed, "bez nazwy")}`));
+        // tytuł: nazwa obiektu, a gdy źródło jej nie podaje – ulica (identyfikator techniczny tylko dla administratora)
+        const st0 = item.standard || {};
+        const heading = item.nazwa_obiektu || [st0.street_address, st0.city].filter(Boolean).join(", ") || "Defibrylator AED";
+        const h3 = appendText(top, "h3", "", heading);
+        if (role === "admin") appendText(h3, "span", "result__id", ` · ${text(item.id_aed)}`);
         card.append(top);
 
         const address = [item.adres, item.pietro ? `piętro ${item.pietro}` : ""].filter(Boolean).join(", ");
@@ -884,7 +889,7 @@
             const td = document.createElement("td");
             if (c.chroniona) td.className = "is-protected";
             if (c.typ === "number" || c.typ === "date") td.classList.add("num");
-            let v = c.pole === "building_name" ? (r.building_name || r._nazwa || r._id) : r[c.pole];
+            let v = c.pole === "building_name" ? (r.building_name || r._nazwa || (role === "admin" ? r._id : "")) : r[c.pole];
             if (c.pole === "_odl" && v != null) v = v < 1000 ? `${v} m` : `${(v / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
             const url = c.pole === "data_source" ? safeSourceUrl(v) : "";
             if (url) {

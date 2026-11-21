@@ -177,6 +177,13 @@ def _miasto_z_instytucji(name: str) -> str:
     return m.group(1) if m else ""
 
 
+def _wypelnienie(recs: list[AED]) -> float:
+    """Średnia liczba wypełnionych pól standardu na rekord (do wyboru lepszej wersji tego samego zbioru)."""
+    if not recs:
+        return 0.0
+    return sum(sum(1 for v in r.extra["std"].values() if v not in ("", None)) for r in recs) / len(recs)
+
+
 def _probka(rows: list[dict], geo_roles: dict, res: dict) -> dict:
     return {
         "naglowki": list(rows[0].keys()) if rows else [],
@@ -251,7 +258,7 @@ def load(cfg: dict, progress=lambda msg: None, geokoder=None) -> tuple[list[AED]
             report.append({"zasob": rid, "blad": str(exc)})
 
     seen = set()
-    seen_sets: dict[str, list[tuple[str, set]]] = {}
+    seen_sets: dict[str, list[dict]] = {}
     for ds, res in jobs:
         rid = str(res["id"])
         if rid in seen:
@@ -294,12 +301,22 @@ def load(cfg: dict, progress=lambda msg: None, geokoder=None) -> tuple[list[AED]
             if not url and "metoda" not in entry:
                 entry["pominieto"] = "zasób bez pliku do pobrania"
             sig = {(round(r.szerokosc, 4), round(r.dlugosc, 4)) for r in recs}
-            twin = next((t for t in seen_sets.get(str(ds.get("id")), []) if sig and len(sig & t[1]) >= 0.9 * len(sig)), None)
-            if twin:
-                entry["pominieto"] = f"ten sam zestaw danych co zasób {twin[0]} (inny format), liczony raz"
+            score = _wypelnienie(recs)
+            group = seen_sets.setdefault(str(ds.get("id")), [])
+            twin = next((t for t in group if sig and len(sig & t["sig"]) >= 0.9 * len(sig)), None)
+            if twin and score <= twin["score"]:
+                entry["pominieto"] = f"ten sam zestaw danych co zasób {twin['rid']} (inny format), liczony raz"
                 recs = []
+            elif twin:
+                # ten sam zestaw w kilku formatach: zostaje wersja z większą liczbą wypełnionych pól
+                # (np. GeoJSON z samą geometrią przegrywa z CSV, który ma nazwy i adresy)
+                old_ids = {id(r) for r in twin["recs"]}
+                records[:] = [r for r in records if id(r) not in old_ids]
+                twin["entry"]["rekordy"] = 0
+                twin["entry"]["pominieto"] = f"ten sam zestaw danych co zasób {rid} (inny format, mniej wypełnionych pól)"
+                twin.update(rid=rid, sig=sig, recs=recs, score=score, entry=entry)
             else:
-                seen_sets.setdefault(str(ds.get("id")), []).append((rid, sig))
+                group.append({"rid": rid, "sig": sig, "recs": recs, "score": score, "entry": entry})
             records += recs
             entry["rekordy"] = len(recs)
             if rows and not recs and "pominieto" not in entry:

@@ -186,3 +186,33 @@ class StandardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WidokiTest(unittest.TestCase):
+    """Lista i Tabela muszą dostawać wiersz złotego standardu także dla rekordów z dawnej pamięci podręcznej."""
+
+    def test_richer_format_of_same_dataset_wins(self):
+        from unittest import mock
+        from rozwiazanie.scraping import danegov as dg
+        geo = json.dumps({"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [22.7765, 49.7838]}, "properties": {}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [22.7678, 49.7843]}, "properties": {}}]}).encode()
+        csv_raw = "Lokalizacj;Adres_AED;Y;X\nDworzec PKP;Plac Legionów 1;49.7838;22.7765\nUrząd;Rynek 1;49.7843;22.7678\n".encode()
+        ds = {"id": "4581", "attributes": {"title": "Lokalizacje AED w Przemyślu", "license_name": "CC0 1.0"}}
+        res = {"data": [
+            {"id": "62093", "attributes": {"title": "AED", "format": "geojson", "download_url": "https://x.invalid/a.geojson"}, "relationships": {}},
+            {"id": "62095", "attributes": {"title": "AED", "format": "csv", "download_url": "https://x.invalid/a.csv"}, "relationships": {}}],
+            "links": {}}
+
+        def get_json(url, timeout=25):
+            if "/datasets?q=" in url:
+                return {"data": [ds], "links": {}}
+            return res
+
+        with mock.patch.object(dg, "_get_json", side_effect=get_json), \
+                mock.patch.object(dg, "_get_bytes", side_effect=lambda u, timeout=40: geo if u.endswith("geojson") else csv_raw):
+            recs, report = dg.load({"queries": ["defibrylator"]})
+        self.assertEqual(len(recs), 2)  # ten sam zestaw liczony raz
+        self.assertEqual(sorted(r.nazwa_obiektu for r in recs), ["Dworzec PKP", "Urząd"])  # wygrał CSV z nazwami
+        self.assertIn("mniej wypełnionych pól", report[0]["pominieto"])
+        self.assertEqual(recs[0].extra["std"]["street_address"], "Plac Legionów 1")  # „Adres_AED” po fragmencie nazwy

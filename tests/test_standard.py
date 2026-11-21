@@ -57,6 +57,15 @@ class CzytnikiTest(unittest.TestCase):
         self.assertEqual(r["street_address"], "al. Józefa Piłsudskiego 95, Marki")  # przecinek w adresie
         self.assertEqual(recs[1]["street_address"], "ul. Szkolna 2")
 
+    def test_point_far_from_dataset_is_reported_not_changed(self):
+        raw = ("Nazwa;Szerokosc;Dlugosc\nUrząd;52,3267;21,1076\nSzkoła;52,3240;21,0982\n"
+               "Basen;52,3170;21,1041\nHala;49,7188;21,7203\n").encode("utf-8")
+        recs, entry, _ = run(raw)
+        self.assertEqual(len(recs), 4)
+        self.assertEqual(len(entry["podejrzane_wspolrzedne"]), 1)
+        self.assertIn("wiersz 4", entry["podejrzane_wspolrzedne"][0])
+        self.assertEqual(recs[3]["building_name"], "Hala")
+
     def test_csv_cp1250_semicolon_decimal_comma_title_row(self):
         raw = ("Wykaz defibrylatorów AED – stan na 2026\n\n"
                "Lp.;Nazwa obiektu;Adres;Szerokość geograficzna;Długość geograficzna;Dostępność\n"

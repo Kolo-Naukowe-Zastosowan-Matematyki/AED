@@ -195,6 +195,16 @@ def _probka(rows: list[dict], geo_roles: dict, res: dict) -> dict:
     }
 
 
+MAX_KM_OD_ZBIORU = 30
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+    dy = (lat2 - lat1) * 111.2
+    dx = (lon2 - lon1) * 111.2 * math.cos(math.radians((lat1 + lat2) / 2))
+    return math.hypot(dx, dy)
+
+
 def standaryzuj_wiersze(rows: list[dict], geo_roles: dict, ctx: dict, entry: dict, geokoder=None,
                         rid: str = "", start: int = 1) -> list[AED]:
     """Wiersze jednego zasobu -> rekordy AED w złotym standardzie; wszystko, co się nie udało, trafia do `entry`."""
@@ -225,6 +235,16 @@ def standaryzuj_wiersze(rows: list[dict], geo_roles: dict, ctx: dict, entry: dic
         for b in braki(rec):
             brakuje[b] = brakuje.get(b, 0) + 1
         out.append(_std_to_aed(rec, rid=rid, n=n, ctx=ctx))
+    # punkty daleko od reszty zbioru (np. współrzędne skopiowane z innego miasta): tylko zgłaszamy w raporcie,
+    # nazw i miejscowości z pliku nie zmieniamy
+    if len(out) >= 3:
+        lat0 = sorted(r.szerokosc for r in out)[len(out) // 2]
+        lon0 = sorted(r.dlugosc for r in out)[len(out) // 2]
+        daleko = [f"wiersz {r.id_aed.rsplit('-', 1)[-1]}: {r.szerokosc}, {r.dlugosc} "
+                  f"({round(_km(lat0, lon0, r.szerokosc, r.dlugosc))} km od pozostałych)"
+                  for r in out if _km(lat0, lon0, r.szerokosc, r.dlugosc) > MAX_KM_OD_ZBIORU]
+        if daleko:
+            entry["podejrzane_wspolrzedne"] = daleko
     if odrzucone:
         entry["odrzucone"] = odrzucone
         entry["odrzucone_przyklady"] = przyklady

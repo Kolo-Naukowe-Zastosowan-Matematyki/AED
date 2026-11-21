@@ -191,6 +191,25 @@ if __name__ == "__main__":
 class WidokiTest(unittest.TestCase):
     """Lista i Tabela muszą dostawać wiersz złotego standardu także dla rekordów z dawnej pamięci podręcznej."""
 
+    def test_legacy_cache_record_has_standard_row(self):
+        import tempfile
+        from rozwiazanie.backend.schema import AED
+        from rozwiazanie.backend.store import Store
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp), {})
+            r = AED("dgp-62093-1", 49.78121, 22.775094, "danegov", "https://dane.gov.pl/pl/dataset/4581/resource/62093",
+                    "CC0 1.0", nazwa_obiektu="Dworzec PKP", adres="Plac Legionów 1, 37-700 Przemyśl",
+                    extra={"zbior": "Lokalizacje AED w Przemyślu"})
+            store.by_source["danegov"] = [r]
+            store._rebuild()
+            d = store.detail(0)
+            st = d["standard"]
+            self.assertEqual((st["latitude"], st["longitude"]), (49.78121, 22.775094))
+            self.assertEqual((st["building_name"], st["city"], st["postal_code"]), ("Dworzec PKP", "Przemyśl", "37-700"))
+            self.assertEqual(st["region"], "podkarpackie")
+            self.assertEqual(st["data_source"], r.zrodlo_url)
+            self.assertEqual(store.search(location="Przemyśl")["razem"], 1)
+
     def test_richer_format_of_same_dataset_wins(self):
         from unittest import mock
         from rozwiazanie.scraping import danegov as dg

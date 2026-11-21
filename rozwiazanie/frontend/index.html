@@ -840,11 +840,19 @@
         if (mode?.typ === "najblizsze") cols.splice(1, 0, { pole: "_odl", nazwa: "Odległość", typ: "number" });
         return cols;
       }
+      // zapasowo: pola rekordu mapy, gdyby serwer (np. starsza wersja) nie przysłał wiersza złotego standardu
+      function legacyStandard(it) {
+        const out = { latitude: it.szerokosc, longitude: it.dlugosc, building_name: it.nazwa_obiektu, street_address: it.adres,
+                      exact_location: it.opis_lokalizacji, operator_name: it.dysponent, opening_hours: it.godziny_dostepnosci,
+                      record_updated_at: it.data_weryfikacji, data_source: it.zrodlo_url };
+        if (it.wewnatrz === true || it.wewnatrz === false) out.is_indoor = it.wewnatrz;
+        return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+      }
       function renderTable(items) {
         if (view !== "tabela") return;
         const cols = tableColumns();
         const table = document.getElementById("rtable");
-        const rows = items.map((it) => ({ ...(it.standard || {}), _id: it.id_aed, _nazwa: it.nazwa_obiektu, _odl: it.odleglosc_m }));
+        const rows = items.map((it) => ({ ...legacyStandard(it), ...(it.standard || {}), _id: it.id_aed, _nazwa: it.nazwa_obiektu, _odl: it.odleglosc_m }));
         if (!cols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: cols[1]?.pole || "city", dir: 1 };
         const key = tableSort.pole;
         rows.sort((a, b) => (key === "_odl" ? (a._odl - b._odl)

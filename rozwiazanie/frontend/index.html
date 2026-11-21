@@ -1,0 +1,1264 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b3152">
+  <title>Rejestr AED — wyszukiwarka defibrylatorów</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: #242a30;
+      background: #f3f4f5;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --blue: #0066a4;
+      --navy: #082d4b;
+      --orange: #d72d00;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-width: 320px; }
+    button, input, select { font: inherit; }
+    a { color: var(--blue); }
+    .topbar { height: 58px; background: #fff; border-bottom: 1px solid #d5d9dc; }
+    .topbar__inner {
+      width: min(1120px, calc(100% - 32px)); height: 100%; margin: auto;
+      display: flex; align-items: center; gap: 18px;
+    }
+    /* godło na czerwonym pasie od lewej krawędzi ekranu, jak w serwisach administracji (np. Rejestry e-Zdrowia) */
+    .topbar { overflow: hidden; }
+    .brand-mark { position: relative; flex: none; align-self: stretch; width: 64px; margin: 6px 4px 6px 0;
+      display: grid; place-items: center end; background: #dc143c; }
+    .brand-mark::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 100vw; background: #dc143c; }
+    .brand-mark img { display: block; height: 34px; width: auto; margin-right: 12px; }
+    .brand { color: #20252a; font-family: Georgia, serif; font-size: 21px; text-decoration: none; }
+    .topbar__links { margin-left: auto; display: flex; gap: 26px; font-size: 14px; font-weight: 650; }
+    .topbar__links a { text-decoration: none; }
+    .hero {
+      color: #fff;
+      background:
+        radial-gradient(ellipse at 82% 25%, rgba(52, 127, 170, .42), transparent 35%),
+        linear-gradient(118deg, #082844, #164f7d 72%, #0c3658);
+      padding: 28px 16px 42px;
+    }
+    .hero__inner, .results { width: min(1120px, 100%); margin: 0 auto; }
+    /* widok Tabela: szeroka jest tylko sama tabela, pasek wyników zostaje w szerokości kontenera */
+    .results--wide #view-tabela { width: min(1840px, calc(100vw - 48px)); margin-left: calc(50% - min(920px, 50vw - 24px)); }
+    .identity { display: flex; align-items: center; gap: 18px; margin: 0 0 18px; }
+    .identity__acronym { font-family: Georgia, serif; font-size: 48px; line-height: 1; letter-spacing: .04em; }
+    .identity__name { font-size: 19px; line-height: 1.18; font-weight: 700; }
+    .intro { margin: 0 0 20px; font-size: 15px; line-height: 1.55; }
+    .intro strong { display: block; margin-bottom: 5px; }
+    .intro ul { list-style: none; margin: 0; padding: 0; }
+    .intro li::before { content: "•"; color: #ef4b13; font-size: 20px; margin-right: 10px; }
+    .search-panel {
+      background: #fff; color: #242a30; padding: 27px 28px 20px;
+      box-shadow: 0 3px 14px rgba(0, 0, 0, .13);
+    }
+    .search-panel h1 { margin: 0 0 20px; font-size: 21px; }
+    .fields { display: grid; grid-template-columns: 1fr 178px; }
+    .fields.is-admin { grid-template-columns: 1fr 1.3fr 178px; }
+    .fields input[hidden] { display: none; }
+    .suggest { position: relative; min-width: 0; display: grid; }
+    .suggest input { width: 100%; padding-right: 48px; }
+    .place-locate { position: absolute; z-index: 2; top: 0; right: 0; width: 46px; height: 100%; display: grid; place-items: center;
+      padding: 0; border: 0; background: none; color: var(--blue); cursor: pointer; }
+    .place-locate svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .place-locate:hover { color: #ef4b13; }
+    .place-locate:focus-visible { outline: 3px solid #ffc400; outline-offset: -3px; }
+    .place-locate.is-busy { color: #d88a00; }
+    .place-locate.is-on { color: #ef4b13; }
+    .intro a { color: #fff; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+    .intro a:hover { text-decoration-thickness: 2px; }
+    .suggest__list {
+      position: absolute; z-index: 20; top: 100%; left: 0; right: 0; margin: 0; padding: 4px 0; list-style: none;
+      background: #fff; border: 1px solid #cfd3d6; border-top: 0; box-shadow: 0 8px 18px rgba(0, 0, 0, .14);
+      max-height: 320px; overflow-y: auto;
+    }
+    .suggest__list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; cursor: pointer; font-size: 15px; }
+    .suggest__list li[aria-selected="true"], .suggest__list li:hover { background: #eaf3fa; }
+    .suggest__list mark { background: none; color: inherit; font-weight: 700; }
+    .suggest__type { color: #687889; font-size: 12px; white-space: nowrap; align-self: center; }
+    .quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .quick__label { width: 100%; font-size: 13px; font-weight: 700; color: #4d5962; text-transform: uppercase; letter-spacing: .04em; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px;
+      border: 1px solid #9fb3c4; border-radius: 18px; background: #fff; color: #1d3447; font-weight: 650; font-size: 14px; cursor: pointer;
+    }
+    .chip:hover { border-color: var(--blue); }
+    .chip[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .chip[aria-pressed="true"]::before { content: "✓"; }
+    .chip__n { font-weight: 400; opacity: .75; font-size: 12px; }
+    .chip:focus-visible, .filter-group summary:focus-visible { outline: 3px solid #ffc400; outline-offset: 2px; }
+    .count-pill { display: inline-block; min-width: 20px; padding: 1px 6px; margin-left: 4px; border-radius: 10px;
+      background: var(--orange); color: #fff; font-size: 12px; text-decoration: none; text-align: center; }
+    .count-pill[hidden] { display: none; }
+    .fields input, .fields select {
+      min-width: 0; height: 46px; padding: 0 14px; border: 1px solid #cfd3d6;
+      border-right: 0; border-radius: 0; color: #303941; background: #fff;
+    }
+    .fields input::placeholder { color: #687889; opacity: 1; }
+    .fields input:focus, .fields select:focus, .advanced input:focus {
+      position: relative; z-index: 1; outline: 3px solid #80bdff; outline-offset: -3px;
+    }
+    .search-button {
+      border: 0; min-height: 46px; padding: 0 20px; background: var(--orange);
+      color: #fff; font-weight: 700; cursor: pointer;
+    }
+    .search-button svg { width: 18px; height: 18px; margin-left: 5px; vertical-align: middle; fill: none; stroke: currentColor; stroke-width: 2.4; }
+    .search-button:hover { background: #b92500; }
+    .search-button:focus-visible, .text-button:focus-visible, .advanced-toggle:focus-visible,
+    .pagination button:focus-visible, a:focus-visible { outline: 3px solid #ffc400; outline-offset: 2px; }
+    .search-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
+    .nearest-button {
+      display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 18px;
+      border: 2px solid var(--orange); background: #fff; color: var(--orange); font-weight: 700; cursor: pointer;
+    }
+    .nearest-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+    .nearest-button:hover { background: #fff3ef; }
+    .nearest-button:focus-visible { outline: 3px solid #ffc400; outline-offset: 2px; }
+    .result__distance { color: var(--orange); font-weight: 700; }
+    .advanced-toggle, .text-button {
+      border: 0; background: none; padding: 8px 0; color: #005ea8; font-weight: 650;
+      text-decoration: underline; cursor: pointer;
+    }
+    .advanced-toggle::after { content: "⌄"; display: inline-block; margin-left: 7px; text-decoration: none; }
+    .advanced-toggle[aria-expanded="true"]::after { content: "⌃"; }
+    .text-button { border: 1px solid #1681cb; padding: 8px 18px; text-decoration: none; }
+    .advanced {
+      display: none; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px; padding-top: 16px; margin-top: 16px; border-top: 1px solid #e1e4e6; align-items: start;
+    }
+    /* rozwinięte kategorie w jednym rzędzie mają wspólną wysokość (zwinięte zostają niskie) */
+    .filter-group[open] { align-self: stretch; }
+    .advanced.is-open { display: grid; }
+    .filter-group { border: 1px solid #d5dbe0; background: #fafbfc; }
+    .filter-group summary { padding: 11px 14px; font-weight: 700; cursor: pointer; list-style: none; display: flex; justify-content: space-between; gap: 8px; }
+    .filter-group summary::-webkit-details-marker { display: none; }
+    .filter-group summary::after { content: "⌄"; color: var(--blue); }
+    .filter-group[open] summary::after { content: "⌃"; }
+    .filter-group__body { display: grid; gap: 12px; padding: 4px 14px 14px; }
+    .advanced label { display: grid; gap: 6px; font-size: 14px; font-weight: 650; }
+    .advanced select { width: 100%; min-width: 0; height: 40px; padding: 0 10px; border: 1px solid #cfd3d6; background: #fff; }
+    .filter-group, .filter-group__body, .advanced label { min-width: 0; }
+    .advanced select.is-set { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
+    .lock { justify-self: start; padding: 1px 6px; background: #fff1d6; color: #7a4b00; font-size: 11px; font-weight: 700; }
+    .result__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+    .tag { padding: 3px 8px; border-radius: 2px; font-size: 12px; font-weight: 700; background: #eef0f2; color: #3d4954; }
+    .tag--ok { background: #e6f3eb; color: #176239; }
+    .tag--warn { background: #fff1d6; color: #7a4b00; }
+    .tag--bad { background: #fde7e4; color: #9b1c0c; }
+    .check { display: flex !important; align-items: center; gap: 9px !important; align-self: end; min-height: 42px; }
+    .check input { width: 18px; height: 18px; accent-color: var(--blue); }
+    .results-wrap { padding: 28px 16px 48px; }
+    /* pasek wyników: tytuł z licznikiem po lewej, zakładki widoków po prawej, wspólna linia pod spodem */
+    .results__bar {
+      display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+      gap: 10px 24px; margin-bottom: 18px; border-bottom: 1px solid #cfd8df;
+    }
+    .results__head { display: flex; align-items: center; gap: 12px; padding-bottom: 12px; min-width: 0; }
+    .results__bar h2 { margin: 0; font-size: 22px; line-height: 1.2; color: #1b2733; }
+    .results-wrap[hidden], .view-panel[hidden] { display: none; }
+    .views { display: flex; gap: 4px; margin-bottom: -1px; }
+    .views button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px;
+      border: 0; border-bottom: 3px solid transparent; background: none; color: #005ea8; font-weight: 700;
+      font-size: 15px; cursor: pointer; }
+    .views button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; flex: none; }
+    .views button:hover { color: var(--navy); background: #e9f1f7; }
+    .views button[aria-selected="true"] { color: var(--navy); border-bottom-color: var(--orange); }
+    .views button:focus-visible { outline: 3px solid #ffc400; outline-offset: -3px; }
+    .table-tools { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; margin: 0 0 10px; font-size: 14px; color: #4d5962; }
+    .table-tools a { font-weight: 650; }
+    .table-scroll { overflow-x: auto; background: #fff; border: 1px solid #e1e4e6; }
+    .rtable { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .rtable th, .rtable td { padding: 9px 12px; border-bottom: 1px solid #e8ebed; text-align: left; vertical-align: top; }
+    .rtable th { position: sticky; top: 0; background: #f6f8f9; color: #26323c; white-space: nowrap; font-size: 13px; }
+    .rtable th button { all: unset; cursor: pointer; }
+    .rtable th button:focus-visible { outline: 3px solid #ffc400; }
+    .rtable th.is-protected { background: #fff3dc; color: #6b4300; }
+    .rtable td.is-protected { background: #fffaf0; }
+    .rtable td { max-width: 240px; overflow-wrap: anywhere; }
+    .rtable th, .rtable td { padding: 8px 10px; }
+    .rtable tr.groups th { background: #e9eef2; color: #3d4954; font-size: 12px; text-transform: uppercase; letter-spacing: .04em;
+      border-bottom: 0; border-left: 2px solid #fff; }
+    .rtable .grp-start { border-left: 2px solid #d5dbe0; }
+    .rtable .grp-toggle { all: unset; cursor: pointer; white-space: nowrap; }
+    .rtable .grp-toggle:hover { color: var(--blue); text-decoration: underline; }
+    .rtable .grp-toggle:focus-visible { outline: 3px solid #ffc400; }
+    .rtable .is-collapsed { color: #9aa5ae; text-align: center; min-width: 28px; }
+    .rtable td:first-child, .rtable th:first-child { position: sticky; left: 0; background: inherit; }
+    .rtable tbody tr { background: #fff; }
+    .rtable tbody tr:hover { background: #f4f9fd; }
+    .rtable .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .map-locate { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; cursor: pointer;
+      background: #fff; border: 2px solid rgba(0, 0, 0, .2); border-radius: 4px; background-clip: padding-box; color: #0b4f7c; }
+    .map-locate svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+    .map-locate:hover { background-color: #f4f4f4; }
+    .map-locate:focus-visible { outline: 3px solid #ffc400; }
+    .map-locate.is-busy { color: #d88a00; }
+    #rmap { height: min(70vh, 620px); min-height: 360px; background: #e9eef2; border: 1px solid #d5d9dc; }
+    .map-note { font-size: 13px; color: #56636d; }
+    .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; background: #7a8794; border: 1px solid #fff; box-shadow: 0 0 0 1px #9aa5ae; vertical-align: -1px; }
+    .dot--ok { background: #0a7d3e; } .dot--warn { background: #d88a00; } .dot--bad { background: #b3261e; }
+    .rpopup h3 { margin: 0 0 4px; font-size: 15px; } .rpopup p { margin: 3px 0; }
+    .results__count { padding: 3px 10px; border-radius: 12px; background: #e3edf5; color: #0b4f7c;
+      font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .results__count:empty { display: none; }
+    .result-list { display: grid; gap: 12px; }
+    .result {
+      padding: 20px 22px; background: #fff; border: 1px solid #e1e4e6;
+      border-left: 5px solid #0b6ca7; box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
+    }
+    .result__top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+    .result h3 { margin: 0; color: #202b34; font-size: 18px; }
+    .result__where { margin: 4px 0; color: #34414c; font-size: 14px; line-height: 1.5; }
+    .result__hours { color: #34414c; font-size: 13px; font-weight: 650; align-self: center; }
+    .badge { padding: 4px 9px; background: #e6f3eb; color: #176239; border-radius: 2px; font-size: 12px; font-weight: 700; }
+    .badge--unknown { background: #eef0f2; color: #4d5962; }
+    .admin-link { border: 0; background: none; color: var(--blue); font-weight: 650; cursor: pointer; padding: 0;
+      text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+    .admin-link:hover { text-decoration: underline; }
+    .admin-link svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .user-box { display: inline-flex; align-items: center; gap: 14px; font-size: 14px; color: #1b2733; }
+    .user-box[hidden] { display: none; }
+    .admin-bar { background: #fff6e5; border-bottom: 1px solid #f0c36d; font-size: 14px; }
+    .admin-bar__inner { width: min(1120px, calc(100% - 32px)); margin: auto; padding: 9px 0;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .admin-bar input { height: 34px; padding: 0 10px; border: 1px solid #cfd3d6; min-width: 0; }
+    .admin-bar button { height: 34px; padding: 0 14px; border: 0; background: var(--blue); color: #fff; cursor: pointer; }
+    .admin-bar__error { color: #b00020; }
+    .protected { margin: 10px 0 4px; padding: 10px 12px; border-left: 4px solid #f0a500; background: #fffaf0; }
+    .protected h4 { margin: 0 0 6px; font-size: 13px; color: #7a5200; }
+    .protected dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13px; }
+    .protected dt { color: #56636d; }
+    .protected dd { margin: 0; overflow-wrap: anywhere; }
+    @media (max-width: 560px) { .protected dl { grid-template-columns: 1fr; } .protected dd { margin-bottom: 4px; } }
+    .result__address { margin: 11px 0 5px; font-size: 15px; }
+    .result__description, .result__meta { margin: 5px 0; color: #56636d; font-size: 14px; line-height: 1.5; }
+    .result__links { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 12px; font-size: 14px; font-weight: 650; }
+    .notice { padding: 24px; background: #fff; text-align: center; color: #4e5961; border: 1px solid #e4e6e8; }
+    .notice[hidden] { display: none; }
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 18px; margin: 20px 0; }
+    .pagination button { padding: 8px 14px; color: #005ea8; background: #fff; border: 1px solid #1681cb; cursor: pointer; }
+    .pagination button:disabled { opacity: .45; cursor: default; }
+    .pagination span { font-size: 14px; }
+    @media (max-width: 760px) {
+      .topbar__inner { gap: 11px; }
+      .brand { font-size: 18px; }
+      .topbar__links { gap: 12px; font-size: 13px; }
+      .hero { padding: 24px 16px 30px; }
+      .search-panel { padding: 21px 18px 17px; }
+      .fields, .fields.is-admin { grid-template-columns: 1fr; gap: 8px; }
+      .fields input, .fields select { border: 1px solid #cfd3d6; }
+    }
+    @media (max-width: 500px) {
+      .brand-mark { width: 50px; } .brand-mark img { height: 28px; margin-right: 8px; }
+      .brand { font-size: 16px; }
+      .topbar__links { gap: 9px; }
+      .topbar__links a { max-width: 72px; line-height: 1.1; }
+      .topbar__links a.admin-link { max-width: none; }
+      .login-via { display: none; }
+      .identity__acronym { font-size: 40px; }
+      .identity__name { font-size: 16px; }
+      .search-actions { align-items: flex-start; }
+      .text-button { padding: 8px 9px; font-size: 13px; }
+      .advanced { grid-template-columns: 1fr; }
+      .results__bar { flex-direction: column; align-items: stretch; gap: 0; }
+      .views { width: 100%; }
+      .views button { flex: 1; justify-content: center; padding: 0 8px; }
+      .result { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand-mark"><img src="/vendor/godlo/godlo.svg" alt="Godło Rzeczypospolitej Polskiej"></div>
+      <a class="brand" href="/">Rejestr AED</a>
+      <nav class="topbar__links" aria-label="Nawigacja">
+        <!-- logowanie kontem dane.gov.pl (makieta portalu): rola z konta portalu, bez osobnego hasła serwisu -->
+        <a class="admin-link" id="login-link" href="/aed-api/auth/zaloguj">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"></path></svg>
+          <span>Zaloguj się<span class="login-via"> przez dane.gov.pl</span></span>
+        </a>
+        <span class="user-box" id="user-box" hidden>
+          <span id="user-name"></span>
+          <button class="admin-link" id="logout" type="button">Wyloguj</button>
+        </span>
+      </nav>
+    </div>
+  </header>
+  <div class="admin-bar" id="admin-bar" hidden>
+    <div class="admin-bar__inner" id="admin-bar-inner"></div>
+  </div>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero__inner">
+        <div class="identity">
+          <div class="identity__acronym" aria-hidden="true">RAED</div>
+          <div class="identity__name">Rejestr<br>Defibrylatorów AED</div>
+        </div>
+        <div class="intro">
+          <strong>Znajdziesz tu lokalizacje automatycznych defibrylatorów zewnętrznych:</strong>
+          <ul>
+            <li>wprowadzone do publicznych zbiorów danych <a href="https://dane.gov.pl" target="_blank" rel="noopener">dane.gov.pl</a></li>
+            <li>zebrane w jednym, przeszukiwalnym rejestrze</li>
+          </ul>
+        </div>
+
+        <section class="search-panel" aria-label="Kryteria wyszukiwania AED">
+          <h1 id="page-title">Znajdź defibrylator AED</h1>
+          <form id="search-form" role="search" autocomplete="off">
+            <div class="fields" id="fields">
+              <input id="query" name="q" type="search" placeholder="Nazwa obiektu lub numer AED" aria-label="Nazwa obiektu lub numer AED (administrator)" hidden>
+              <div class="suggest">
+                <input id="place" name="miejsce" type="search" value="Polska" placeholder="Adres, miejscowość, gmina, powiat lub województwo"
+                       aria-label="Adres, miejscowość lub lokalizacja" role="combobox" aria-autocomplete="list"
+                       aria-expanded="false" aria-controls="place-list">
+                <button class="place-locate" id="place-locate" type="button" title="Użyj mojej lokalizacji" aria-label="Użyj mojej lokalizacji">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0 1 13 0c0 4.9-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>
+                </button>
+                <ul class="suggest__list" id="place-list" role="listbox" hidden></ul>
+              </div>
+              <button class="search-button" type="submit">
+                Szukaj
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+              </button>
+            </div>
+            <div class="quick" id="quick-filters" role="group" aria-label="Najważniejsze filtry"></div>
+            <div class="search-actions">
+              <button class="nearest-button" id="nearest" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="7"></circle></svg>
+                Znajdź najbliższe
+              </button>
+              <button class="advanced-toggle" type="button" aria-expanded="false" aria-controls="advanced-fields">Więcej filtrów <span class="count-pill" id="adv-count" hidden></span></button>
+              <button class="text-button" id="clear" type="button">Wyczyść kryteria wyszukiwania</button>
+            </div>
+            <div class="advanced" id="advanced-fields"></div>
+          </form>
+        </section>
+      </div>
+    </section>
+
+    <section class="results-wrap" id="results-wrap" aria-labelledby="results-title" hidden>
+      <div class="results">
+        <div class="results__bar">
+          <div class="results__head">
+            <h2 id="results-title">Wyniki wyszukiwania</h2>
+            <span class="results__count" id="result-count" aria-live="polite"></span>
+          </div>
+          <div class="views" role="tablist" aria-label="Sposób prezentacji wyników">
+            <button type="button" role="tab" id="tab-lista" data-view="lista" aria-selected="true" aria-controls="result-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"></path><circle cx="4.5" cy="6" r="1.2"></circle><circle cx="4.5" cy="12" r="1.2"></circle><circle cx="4.5" cy="18" r="1.2"></circle></svg>Lista</button>
+            <button type="button" role="tab" id="tab-tabela" data-view="tabela" aria-selected="false" aria-controls="view-tabela"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"></rect><path d="M3 9.5h18M3 15h18M9.5 4v16"></path></svg>Tabela</button>
+            <button type="button" role="tab" id="tab-mapa" data-view="mapa" aria-selected="false" aria-controls="view-mapa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>Mapa</button>
+          </div>
+        </div>
+        <div class="notice" id="notice" role="status">Wczytywanie rejestru AED…</div>
+        <div class="result-list" id="result-list"></div>
+        <nav class="pagination" id="pagination" aria-label="Strony wyników" hidden>
+          <button type="button" id="previous">Poprzednia</button>
+          <span id="page-label"></span>
+          <button type="button" id="next">Następna</button>
+        </nav>
+        <div class="view-panel" id="view-tabela" role="tabpanel" aria-labelledby="tab-tabela" hidden>
+          <div class="table-tools">
+            <span id="table-info"></span>
+            <a href="/tabela" id="full-table">Pełna tabela z wyborem kolumn i eksportem</a>
+          </div>
+          <div class="table-scroll"><table class="rtable" id="rtable"><thead></thead><tbody></tbody></table></div>
+          <nav class="pagination" id="table-pages" aria-label="Strony tabeli" hidden>
+            <button type="button" id="t-prev">Poprzednia</button><span id="t-label"></span><button type="button" id="t-next">Następna</button>
+          </nav>
+        </div>
+        <div class="view-panel" id="view-mapa" role="tabpanel" aria-labelledby="tab-mapa" hidden>
+          <div id="rmap" aria-label="Mapa wyników"></div>
+          <p class="map-note">Kolor: <span class="dot dot--ok"></span> 24/7 · <span class="dot dot--warn"></span> w godzinach otwarcia · <span class="dot dot--bad"></span> tylko personel · <span class="dot"></span> brak informacji. Podkład: © współtwórcy OpenStreetMap.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const pageSize = 25;
+      const form = document.getElementById("search-form");
+      const list = document.getElementById("result-list");
+      const notice = document.getElementById("notice");
+      const count = document.getElementById("result-count");
+      const pagination = document.getElementById("pagination");
+      const pageLabel = document.getElementById("page-label");
+      const previous = document.getElementById("previous");
+      const next = document.getElementById("next");
+      let offset = 0;
+      let total = 0;
+      let requestId = 0;
+
+      const text = (value, fallback = "") => value ? String(value) : fallback;
+      const safeSourceUrl = (value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+        } catch {
+          return "";
+        }
+      };
+      const appendText = (parent, tag, className, value) => {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        element.textContent = value;
+        parent.append(element);
+        return element;
+      };
+
+      // Rola i tabela kolumn z serwera. Kolumny chronione przychodzą z API tylko dla administratora.
+      let role = "publiczny";
+      let columnLabels = {};
+      let schemaCols = [];   // kolumny złotego standardu widoczne dla roli (z serwera)
+      const adminBar = document.getElementById("admin-bar");
+      const adminInner = document.getElementById("admin-bar-inner");
+      const loginLink = document.getElementById("login-link");
+      const userBox = document.getElementById("user-box");
+
+      async function loadRole() {
+        try {
+          const [r, k] = await Promise.all([
+            fetch("/aed-api/auth/rola", { credentials: "same-origin" }).then((x) => x.json()),
+            fetch("/aed-api/kolumny", { credentials: "same-origin" }).then((x) => x.json()),
+          ]);
+          role = r.rola;
+          columnLabels = Object.fromEntries(k.kolumny.map((c) => [c.pole, c.nazwa]));
+          schemaCols = k.kolumny;
+          renderAccount(r);
+        } catch {
+          role = "publiczny";
+        }
+        const queryInput = document.getElementById("query");
+        queryInput.hidden = role !== "admin";          // wyszukiwanie po nazwie i numerze AED: tylko administrator
+        if (role !== "admin") queryInput.value = "";
+        document.getElementById("fields").classList.toggle("is-admin", role === "admin");
+        await loadFilters();
+      }
+
+      // ---- Filtry: definicje z serwera wg roli (kolumny chronione tylko dla administratora; serwer to wymusza)
+      const quick = document.getElementById("quick-filters");
+      const advanced = document.getElementById("advanced-fields");
+      const advCount = document.getElementById("adv-count");
+      const state = {};       // f.<pole> -> wartość (filtry w kategoriach)
+      const quickState = {};  // f.<pole> -> wartość (najważniejsze)
+      let openGroups = new Set(["Lokalizacja"]);
+
+      function activeFilters() {
+        return { ...state, ...quickState };
+      }
+      function updateCount() {
+        const n = Object.keys(state).length;
+        advCount.hidden = n === 0;
+        advCount.textContent = String(n);
+      }
+      // opcje i liczniki filtrów liczone dla bieżącego miejsca (np. „Legionowo” -> tylko mazowieckie, Legionowo)
+      let filtersReq = 0;
+      async function loadFilters() {
+        let defs;
+        const req = ++filtersReq;
+        const params = new URLSearchParams();
+        const p = placeParams();
+        if (p.miejsce) params.set("miejsce", p.miejsce);
+        const query = document.getElementById("query").value.trim();
+        if (query && role === "admin") params.set("q", query);
+        try {
+          defs = await fetch(`/aed-api/filtry?${params}`, { credentials: "same-origin" }).then((x) => x.json());
+        } catch {
+          return;
+        }
+        if (req !== filtersReq) return;
+        // po wylogowaniu znikają filtry na kolumnach chronionych
+        const allowed = new Set([...defs.najwazniejsze.map((f) => f.id),
+                                 ...defs.kategorie.flatMap((c) => c.filtry.map((f) => f.id))]);
+        Object.keys(state).forEach((k) => { if (!allowed.has(k)) delete state[k]; });
+        Object.keys(quickState).forEach((k) => { if (!allowed.has(k)) delete quickState[k]; });
+
+        quick.replaceChildren();
+        appendText(quick, "span", "quick__label", "Najważniejsze");
+        defs.najwazniejsze.forEach((f) => {
+          const chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "chip";
+          chip.setAttribute("aria-pressed", String(quickState[f.id] === f.wartosc));
+          chip.append(document.createTextNode(f.etykieta));
+          if (f.liczba != null) appendText(chip, "span", "chip__n", `(${f.liczba})`);
+          chip.addEventListener("click", () => {
+            const on = quickState[f.id] === f.wartosc;
+            if (on) delete quickState[f.id]; else quickState[f.id] = f.wartosc;
+            if (!on && state[f.id]) { delete state[f.id]; renderAdvanced(defs); }
+            chip.setAttribute("aria-pressed", String(!on));
+            offset = 0;
+            search();
+          });
+          quick.append(chip);
+        });
+        renderAdvanced(defs);
+      }
+      function renderAdvanced(defs) {
+        advanced.replaceChildren();
+        defs.kategorie.forEach((cat) => {
+          const group = document.createElement("details");
+          group.className = "filter-group";
+          group.open = openGroups.has(cat.nazwa);
+          group.addEventListener("toggle", () => {
+            if (group.open) openGroups.add(cat.nazwa); else openGroups.delete(cat.nazwa);
+          });
+          const summary = document.createElement("summary");
+          const set = cat.filtry.filter((f) => state[f.id]).length;
+          summary.textContent = cat.nazwa + (set ? ` (${set})` : "");
+          group.append(summary);
+          const body = document.createElement("div");
+          body.className = "filter-group__body";
+          cat.filtry.forEach((f) => {
+            const label = document.createElement("label");
+            label.textContent = f.etykieta;
+            if (f.chroniona) appendText(label, "span", "lock", "chronione: tylko administrator");
+            const select = document.createElement("select");
+            select.name = f.id;
+            const any = document.createElement("option");
+            any.value = "";
+            any.textContent = "Wszystkie";
+            select.append(any);
+            if (state[f.id] && !f.opcje.some((o) => o.wartosc === state[f.id])) {
+              f.opcje.push({ wartosc: state[f.id], etykieta: state[f.id], liczba: 0 });  // wybór spoza bieżących wyników
+            }
+            f.opcje.forEach((o) => {
+              const opt = document.createElement("option");
+              opt.value = o.wartosc;
+              opt.textContent = `${o.etykieta} (${o.liczba})`;
+              opt.disabled = o.liczba === 0 && state[f.id] !== o.wartosc;
+              select.append(opt);
+            });
+            select.value = state[f.id] || "";
+            select.classList.toggle("is-set", Boolean(state[f.id]));
+            select.addEventListener("change", () => {
+              if (select.value) state[f.id] = select.value; else delete state[f.id];
+              if (quickState[f.id] && quickState[f.id] !== select.value) {
+                delete quickState[f.id];
+                quick.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", "false"));
+                Object.keys(quickState).forEach((k) => {
+                  const d = defs.najwazniejsze.find((x) => x.id === k);
+                  const c = [...quick.querySelectorAll(".chip")].find((el) => el.firstChild.textContent === d?.etykieta);
+                  if (c) c.setAttribute("aria-pressed", "true");
+                });
+              }
+              select.classList.toggle("is-set", Boolean(select.value));
+              summary.textContent = cat.nazwa + (cat.filtry.filter((x) => state[x.id]).length ? ` (${cat.filtry.filter((x) => state[x.id]).length})` : "");
+              updateCount();
+              offset = 0;
+              search();
+            });
+            label.append(select);
+            body.append(label);
+          });
+          group.append(body);
+          advanced.append(group);
+        });
+        updateCount();
+      }
+
+      // ---- Podpowiedzi w polu adresu (miejscowości, ulice, województwa i kody z rejestru)
+      const placeInput = document.getElementById("place");
+      const placeList = document.getElementById("place-list");
+      let suggestions = [];
+      let active = -1;
+      let suggestTimer = 0;
+      let suggestReq = 0;
+      function closeSuggest() {
+        placeList.hidden = true;
+        placeList.replaceChildren();
+        placeInput.setAttribute("aria-expanded", "false");
+        placeInput.removeAttribute("aria-activedescendant");
+        active = -1;
+      }
+      function highlight(li, label, phrase) {
+        const norm = (x) => x.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/ł/g, "l").replace(/Ł/g, "L").toLowerCase();
+        const i = norm(label).indexOf(norm(phrase));
+        const main = document.createElement("span");
+        if (i < 0 || !phrase) {
+          main.textContent = label;
+        } else {
+          main.append(document.createTextNode(label.slice(0, i)));
+          appendText(main, "mark", "", label.slice(i, i + phrase.length));
+          main.append(document.createTextNode(label.slice(i + phrase.length)));
+        }
+        li.append(main);
+      }
+      function choose(i) {
+        if (!suggestions[i]) return;
+        placeInput.value = suggestions[i].tekst;
+        closeSuggest();
+        offset = 0;
+        search();
+      }
+      function setActive(i) {
+        const items = [...placeList.children];
+        items.forEach((li, j) => li.setAttribute("aria-selected", String(j === i)));
+        active = i;
+        if (items[i]) {
+          placeInput.setAttribute("aria-activedescendant", items[i].id);
+          items[i].scrollIntoView({ block: "nearest" });
+        }
+      }
+      placeInput.addEventListener("input", () => {
+        clearTimeout(suggestTimer);
+        const phrase = placeInput.value.trim();
+        if (phrase.length < 2) { closeSuggest(); return; }
+        suggestTimer = setTimeout(async () => {
+          const req = ++suggestReq;
+          try {
+            const data = await fetch(`/aed-api/podpowiedzi?q=${encodeURIComponent(phrase)}`).then((x) => x.json());
+            if (req !== suggestReq || placeInput.value.trim() !== phrase) return;
+            suggestions = data.podpowiedzi || [];
+          } catch {
+            suggestions = [];
+          }
+          placeList.replaceChildren();
+          suggestions.forEach((sug, i) => {
+            const li = document.createElement("li");
+            li.id = `place-opt-${i}`;
+            li.setAttribute("role", "option");
+            li.setAttribute("aria-selected", "false");
+            highlight(li, sug.tekst, phrase);
+            appendText(li, "span", "suggest__type", `${sug.typ} · ${sug.liczba} AED`);
+            li.addEventListener("mousedown", (event) => { event.preventDefault(); choose(i); });
+            placeList.append(li);
+          });
+          placeList.hidden = suggestions.length === 0;
+          placeInput.setAttribute("aria-expanded", String(suggestions.length > 0));
+          active = -1;
+        }, 150);
+      });
+      placeInput.addEventListener("keydown", (event) => {
+        if (placeList.hidden) return;
+        if (event.key === "ArrowDown") { event.preventDefault(); setActive(Math.min(active + 1, suggestions.length - 1)); }
+        else if (event.key === "ArrowUp") { event.preventDefault(); setActive(Math.max(active - 1, 0)); }
+        else if (event.key === "Enter" && active >= 0) { event.preventDefault(); choose(active); }
+        else if (event.key === "Escape") closeSuggest();
+      });
+      placeInput.addEventListener("blur", () => setTimeout(closeSuggest, 100));
+
+      // Konto: logowanie w portalu dane.gov.pl (formularz „Zaloguj się” portalu), rola z konta portalu
+      function renderAccount(r) {
+        loginLink.hidden = Boolean(r.uzytkownik);
+        userBox.hidden = !r.uzytkownik;
+        document.getElementById("user-name").textContent = r.uzytkownik
+          ? `${r.uzytkownik}${role === "admin" ? " · służby AED" : ""}` : "";
+        adminInner.replaceChildren();
+        adminBar.hidden = !r.uzytkownik;
+        if (!r.uzytkownik) return;
+        appendText(adminInner, "strong", "", "Zalogowano przez dane.gov.pl.");
+        appendText(adminInner, "span", "", role === "admin"
+          ? (r.dane_demo ? "Konto z uprawnieniami służb: widzisz też kolumny chronione (dane przykładowe, zmyślone)."
+                         : "Konto z uprawnieniami służb: widzisz też kolumny chronione.")
+          : "To konto nie ma uprawnień służb AED, więc widzisz dane publiczne.");
+      }
+      document.getElementById("logout").addEventListener("click", async () => {
+        await fetch("/aed-api/auth/logout", { method: "POST", credentials: "same-origin" });
+        await loadRole();
+        rerun();
+      });
+
+      function protectedBox(item) {
+        const box = document.createElement("section");
+        box.className = "protected";
+        appendText(box, "h4", "", "Dane chronione (widoczne tylko dla administratora)");
+        const dl = document.createElement("dl");
+        item._chronione.forEach((field) => {
+          appendText(dl, "dt", "", columnLabels[field] || field);
+          appendText(dl, "dd", "", text(item[field], "brak danych od dostawcy"));
+        });
+        box.append(dl);
+        return box;
+      }
+
+      // Kolejność w karcie: 1) gdzie jest AED, 2) czy da się go użyć teraz, 3) informacje dodatkowe
+      // Tytuł karty: „Miejscowość, dokładniejsza lokalizacja” (obiekt, ulica albo opis miejsca), żeby punkty
+      // z jednej miejscowości dało się od siebie odróżnić; gdy źródło nie podaje nic poza miastem – współrzędne.
+      function cardPlace(item) {
+        const st = item.standard || {};
+        const city = st.city || "";
+        const generic = (x) => /^(defibrylator|aed|defibrylator aed|aed defibrylator)$/i.test(String(x || "").trim());
+        const name = [item.nazwa_obiektu, st.building_name].find((x) => x && !generic(x)) || "";
+        const street = st.street_address || (item.adres && item.adres !== city ? item.adres : "");
+        const detail = name || item.opis_lokalizacji || st.exact_location || street || "";
+        const coords = item.szerokosc != null && item.dlugosc != null
+          ? `${Number(item.szerokosc).toFixed(5)}, ${Number(item.dlugosc).toFixed(5)}` : "";
+        const heading = [city, detail || coords].filter(Boolean).join(", ") || "Defibrylator AED";
+        // druga linia tylko z tym, czego nie ma w tytule (ulica, piętro); miejscowości nie powtarzamy
+        const rest = [street && street !== detail ? street : "", item.pietro ? `piętro ${item.pietro}` : ""]
+          .filter(Boolean).join(", ");
+        return { heading, rest, detailUsed: detail };
+      }
+      function cardHeading(item) {
+        return cardPlace(item).heading;
+      }
+      function resultCard(item) {
+        const st = item.standard || {};
+        const place = cardPlace(item);
+        const card = document.createElement("article");
+        card.className = "result";
+        const top = document.createElement("div");
+        top.className = "result__top";
+        appendText(top, "h3", "", place.heading);
+        card.append(top);
+
+        // 1. Lokalizacja (bez powtarzania miejscowości z tytułu)
+        const addressLine = (place.rest || item.odleglosc_m != null) ? appendText(card, "p", "result__address", place.rest) : null;
+        if (item.odleglosc_m != null) {
+          const meters = item.odleglosc_m;
+          const distance = meters < 1000 ? `${meters} m` : `${(meters / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
+          const minutes = Math.max(1, Math.round(meters * 1.3 / 83));
+          appendText(addressLine, "span", "result__distance", `${place.rest ? " · " : ""}${distance} od Ciebie (ok. ${minutes} min pieszo)`);
+        }
+        const opis = item.opis_lokalizacji || st.exact_location;
+        const where = [opis !== place.detailUsed ? opis : "",
+                       st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""]
+          .filter(Boolean).join(" · ");
+        if (where) appendText(card, "p", "result__where", where.charAt(0).toUpperCase() + where.slice(1));
+
+        // 2. Najważniejsze: dostępność, godziny, klucz/kod, sprawność
+        const tags = [];
+        if (st.availability_type === "24/7") tags.push(["Dostępny 24/7", "ok"]);
+        else if (st.availability_type === "GODZINY_OTWARCIA") tags.push(["W godzinach otwarcia", "warn"]);
+        else if (st.availability_type === "TYLKO_PERSONEL") tags.push(["Tylko personel", "bad"]);
+        if (st.is_locked === false) tags.push(["Bez klucza i kodu", "ok"]);
+        if (st.is_locked === true) tags.push(["Wymaga klucza lub kodu", "warn"]);
+        if (st.operational_status === "SPRAWNY") tags.push(["Sprawny", "ok"]);
+        if (st.operational_status === "NIESPRAWNY") tags.push(["Niesprawny", "bad"]);
+        if (st.operational_status === "W_SERWISIE") tags.push(["W serwisie", "warn"]);
+        const hours = st.opening_hours || item.godziny_dostepnosci;
+        if (tags.length || hours) {
+          const row = document.createElement("div");
+          row.className = "result__chips";
+          tags.forEach(([label, kind]) => appendText(row, "span", `tag${kind ? ` tag--${kind}` : ""}`, label));
+          if (hours) appendText(row, "span", "result__hours", `Godziny: ${hours}`);
+          card.append(row);
+        }
+
+        // 3. Dodatkowe informacje
+        const metadata = [
+          item.dysponent || st.operator_name ? `Dysponent: ${item.dysponent || st.operator_name}` : "",
+          item.data_weryfikacji ? `Aktualizacja: ${item.data_weryfikacji}` : "",
+          item.zbior ? `Zbiór: ${item.zbior}` : "",
+          "Źródło: dane.gov.pl",
+        ].filter(Boolean).join(" · ");
+        appendText(card, "p", "result__meta", metadata);
+        if (st.possible_duplicate === true) {
+          const dup = document.createElement("div");
+          dup.className = "result__chips";
+          appendText(dup, "span", "tag tag--warn", "Możliwy duplikat");
+          card.append(dup);
+        }
+        if (Array.isArray(item._chronione)) card.append(protectedBox(item));
+
+        const links = document.createElement("div");
+        links.className = "result__links";
+        const mapLink = document.createElement("a");
+        mapLink.href = item.odleglosc_m != null
+          ? `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${item.szerokosc},${item.dlugosc}`
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.szerokosc},${item.dlugosc}`)}`;
+        mapLink.target = "_blank";
+        mapLink.rel = "noopener noreferrer";
+        mapLink.textContent = item.odleglosc_m != null ? "Prowadź do AED" : "Pokaż na mapie";
+        links.append(mapLink);
+        const sourceUrl = safeSourceUrl(item.zrodlo_url);
+        if (sourceUrl) {
+          const sourceLink = document.createElement("a");
+          sourceLink.href = sourceUrl;
+          sourceLink.target = "_blank";
+          sourceLink.rel = "noopener noreferrer";
+          sourceLink.textContent = "Otwórz źródło danych";
+          links.append(sourceLink);
+        }
+        card.append(links);
+        return card;
+      }
+
+      // ---- Wyniki: Lista | Tabela | Mapa pokazują ten sam zestaw (ostatnie wyszukiwanie albo „Znajdź najbliższe”)
+      const resultsWrap = document.getElementById("results-wrap");
+      const title = document.getElementById("results-title");
+      const tabs = [...document.querySelectorAll(".views [role=tab]")];
+      let view = "lista";
+      let mode = null;        // {typ: "szukaj", params} | {typ: "najblizsze", lat, lon}
+      let allItems = null;    // pełny zestaw wyników dla Tabeli i Mapy
+      let allRequest = null;
+
+      function showResults() {
+        resultsWrap.hidden = false;
+      }
+      // pole miejsca: „Polska” (cały rejestr), nazwa obszaru albo „Moja lokalizacja” (pinezka: wyniki od najbliższego)
+      const MY_PLACE = "Moja lokalizacja";
+      let myPos = null;
+      function placeParams() {
+        const place = document.getElementById("place").value.trim();
+        if (place === MY_PLACE && myPos) return { lat: myPos[0], lon: myPos[1] };
+        return place && place.toLowerCase() !== "polska" ? { miejsce: place } : {};
+      }
+      function currentParams() {
+        const params = new URLSearchParams();
+        const query = document.getElementById("query").value.trim();
+        Object.entries(placeParams()).forEach(([k, v]) => params.set(k, String(v)));
+        if (query && role === "admin") params.set("q", query);
+        Object.entries(activeFilters()).forEach(([k, v]) => params.set(k, v));
+        return params;
+      }
+      function rerun() {
+        if (!mode) return;
+        if (mode.typ === "najblizsze") nearestAt(mode.lat, mode.lon);
+        else search();
+      }
+
+      async function search() {
+        const currentRequest = ++requestId;
+        showResults();
+        title.textContent = "Wyniki wyszukiwania";
+        const params = currentParams();
+        mode = { typ: "szukaj", params: params.toString() };
+        if (params.has("lat")) tableSort = { pole: "_odl", dir: 1 };  // „Moja lokalizacja”: od najbliższego
+        else if (tableSort.pole === "_odl") tableSort = { pole: "city", dir: 1 };
+        allItems = null;
+        params.set("limit", String(pageSize));
+        params.set("offset", String(offset));
+        notice.hidden = false;
+        notice.textContent = "Wyszukiwanie w rejestrze…";
+        list.replaceChildren();
+        count.textContent = "";
+        pagination.hidden = true;
+        try {
+          const response = await fetch(`/aed-api/search?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+          if (!response.ok) throw new Error(`Błąd serwera (${response.status})`);
+          const data = await response.json();
+          if (currentRequest !== requestId) return;
+          total = data.razem;
+          data.wyniki.forEach((item) => list.append(resultCard(item)));
+          count.textContent = `${total.toLocaleString("pl-PL")} AED`;
+          notice.hidden = total > 0;
+          notice.textContent = total > 0 ? "" : "Brak elementów na liście. Zmień kryteria wyszukiwania.";
+          const currentPage = Math.floor(offset / pageSize) + 1;
+          pageLabel.textContent = `Strona ${currentPage} z ${Math.ceil(total / pageSize)}`;
+          previous.disabled = offset === 0;
+          next.disabled = offset + pageSize >= total;
+          applyView();
+          loadFilters();
+        } catch (error) {
+          if (currentRequest !== requestId) return;
+          notice.hidden = false;
+          notice.textContent = `Nie udało się pobrać rejestru AED. ${error.message}`;
+        }
+      }
+
+      async function ensureAll() {
+        if (allItems) return allItems;
+        if (!mode || mode.typ !== "szukaj") return [];
+        const key = mode.params;
+        if (!allRequest || allRequest.key !== key) {
+          const params = new URLSearchParams(key);
+          params.set("wszystko", "1");
+          params.set("limit", "5000");
+          allRequest = { key, promise: fetch(`/aed-api/search?${params}`, { credentials: "same-origin" })
+            .then((x) => x.json()).then((d) => d.wyniki || []) };
+        }
+        const items = await allRequest.promise;
+        if (mode && mode.typ === "szukaj" && mode.params === key) allItems = items;
+        return items;
+      }
+
+      function applyView() {
+        tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.view === view)));
+        resultsWrap.querySelector(".results").classList.toggle("results--wide", view === "tabela");
+        const empty = total === 0;
+        list.hidden = view !== "lista";
+        pagination.hidden = view !== "lista" || mode?.typ === "najblizsze" || total <= pageSize;
+        document.getElementById("view-tabela").hidden = view !== "tabela" || empty;
+        document.getElementById("view-mapa").hidden = view !== "mapa" || empty;
+        if (empty) return;
+        if (view === "tabela") ensureAll().then(renderTable);
+        if (view === "mapa") ensureAll().then(renderMap);
+      }
+      tabs.forEach((t) => t.addEventListener("click", () => { view = t.dataset.view; applyView(); }));
+      tabs.forEach((t, i) => t.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+        n.focus();
+        n.click();
+      }));
+
+      // ---- Tabela: kolumny złotego standardu wg roli (chronione tylko u administratora)
+      const tablePageSize = 50;
+      let tableSort = { pole: "city", dir: 1 };
+      let tablePage = 1;
+      const LABELS = { "24/7": "Całodobowo (24/7)", GODZINY_OTWARCIA: "W godzinach otwarcia", TYLKO_PERSONEL: "Tylko personel",
+                       SPRAWNY: "Sprawny", NIESPRAWNY: "Niesprawny", W_SERWISIE: "W serwisie", NIEZNANY: "Nieznany" };
+      const fmt = (pole, v) => {
+        if ((pole === "availability_type" || pole === "operational_status") && LABELS[v]) return LABELS[v];
+        if (v === true || v === "TRUE") return "Tak";
+        if (v === false || v === "FALSE") return "Nie";
+        if (v === null || v === undefined || v === "") return "—";
+        return String(v);
+      };
+      // kolejność: 1) lokalizacja defibrylatora, 2) najważniejsze (czy da się go użyć), 3) informacje dodatkowe
+      const TABLE_GROUPS = [
+        ["Lokalizacja", ["_odl", "city", "street_address", "postal_code", "building_name", "exact_location", "is_indoor"]],
+        ["Najważniejsze", ["availability_type", "opening_hours", "is_locked", "operational_status"]],
+        ["Informacje dodatkowe", ["operator_name", "aed_sn", "pad_expiration_date", "battery_expiration_date",
+          "possible_duplicate", "region", "latitude", "longitude", "record_updated_at", "data_source"]],
+      ];
+      const TABLE_ORDER = TABLE_GROUPS.flatMap(([, pola]) => pola);
+      const groupOf = (pole) => (TABLE_GROUPS.find(([, pola]) => pola.includes(pole)) || TABLE_GROUPS[2])[0];
+      function tableColumns() {
+        const rank = (c) => { const i = TABLE_ORDER.indexOf(c.pole); return i < 0 ? 99 : i; };
+        const cols = [...schemaCols];
+        if (mode?.typ === "najblizsze") cols.push({ pole: "_odl", nazwa: "Odległość", typ: "number" });
+        return cols.sort((a, b) => rank(a) - rank(b));
+      }
+      // zapasowo: pola rekordu mapy, gdyby serwer (np. starsza wersja) nie przysłał wiersza złotego standardu
+      function legacyStandard(it) {
+        const out = { latitude: it.szerokosc, longitude: it.dlugosc, building_name: it.nazwa_obiektu, street_address: it.adres,
+                      exact_location: it.opis_lokalizacji, operator_name: it.dysponent, opening_hours: it.godziny_dostepnosci,
+                      record_updated_at: it.data_weryfikacji, data_source: it.zrodlo_url };
+        if (it.wewnatrz === true || it.wewnatrz === false) out.is_indoor = it.wewnatrz;
+        return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+      }
+      // grupy kolumn zwijane kliknięciem nagłówka; „Informacje dodatkowe” domyślnie zwinięte
+      const collapsedGroups = new Set(["Informacje dodatkowe"]);
+      function renderTable(items) {
+        if (view !== "tabela") return;
+        const allCols = tableColumns();
+        // zwinięta grupa: zamiast jej kolumn jedna wąska kolumna-zakładka
+        const cols = [];
+        allCols.forEach((c) => {
+          const g = groupOf(c.pole);
+          if (!collapsedGroups.has(g)) cols.push(c);
+          else if (!cols.some((x) => x.zwinieta === g)) cols.push({ pole: `_grupa:${g}`, zwinieta: g, nazwa: "", typ: "string" });
+        });
+        const table = document.getElementById("rtable");
+        const rows = items.map((it) => ({ ...legacyStandard(it), ...(it.standard || {}), _nazwa: it.nazwa_obiektu, _odl: it.odleglosc_m }));
+        if (!allCols.some((c) => c.pole === tableSort.pole)) tableSort = { pole: "city", dir: 1 };
+        const key = tableSort.pole;
+        rows.sort((a, b) => (key === "_odl" ? (a._odl - b._odl)
+          : String(a[key] ?? "").localeCompare(String(b[key] ?? ""), "pl", { numeric: true })) * tableSort.dir);
+        const pages = Math.max(1, Math.ceil(rows.length / tablePageSize));
+        tablePage = Math.min(tablePage, pages);
+        const groupRow = document.createElement("tr");
+        groupRow.className = "groups";
+        const starts = new Set();
+        cols.forEach((c, i) => {
+          const gOf = (x) => x.zwinieta || groupOf(x.pole);
+          const g = gOf(c);
+          if (i > 0 && gOf(cols[i - 1]) === g) { groupRow.lastChild.colSpan += 1; return; }
+          starts.add(i);
+          const th = document.createElement("th");
+          th.scope = "colgroup";
+          const open = !collapsedGroups.has(g);
+          const n = allCols.filter((x) => groupOf(x.pole) === g).length;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "grp-toggle";
+          btn.setAttribute("aria-expanded", String(open));
+          btn.title = open ? `Zwiń grupę „${g}”` : `Rozwiń grupę „${g}” (${n} kolumn)`;
+          btn.textContent = `${open ? "▾" : "▸"} ${g}${open ? "" : ` (${n})`}`;
+          btn.addEventListener("click", () => {
+            if (open) collapsedGroups.add(g); else collapsedGroups.delete(g);
+            renderTable(items);
+          });
+          th.append(btn);
+          groupRow.append(th);
+        });
+        const thead = document.createElement("tr");
+        cols.forEach((c, i) => {
+          const th = document.createElement("th");
+          th.scope = "col";
+          if (c.chroniona) { th.className = "is-protected"; th.title = "Kolumna chroniona: widoczna tylko dla administratora"; }
+          if (i > 0 && starts.has(i)) th.classList.add("grp-start");
+          if (c.zwinieta) { th.classList.add("is-collapsed"); thead.append(th); return; }
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = c.nazwa.replace(/\?$/, "") + (key === c.pole ? (tableSort.dir > 0 ? " ▲" : " ▼") : "");
+          btn.addEventListener("click", () => {
+            tableSort = { pole: c.pole, dir: key === c.pole ? -tableSort.dir : 1 };
+            renderTable(items);
+          });
+          th.setAttribute("aria-sort", key === c.pole ? (tableSort.dir > 0 ? "ascending" : "descending") : "none");
+          th.append(btn);
+          thead.append(th);
+        });
+        table.tHead.replaceChildren(groupRow, thead);
+        const body = table.tBodies[0];
+        body.replaceChildren();
+        rows.slice((tablePage - 1) * tablePageSize, tablePage * tablePageSize).forEach((r) => {
+          const tr = document.createElement("tr");
+          cols.forEach((c, i) => {
+            const td = document.createElement("td");
+            if (c.chroniona) td.className = "is-protected";
+            if (i > 0 && starts.has(i)) td.classList.add("grp-start");
+            if (c.zwinieta) { td.className = "is-collapsed"; td.textContent = "…"; tr.append(td); return; }
+            if (c.typ === "number" || c.typ === "date") td.classList.add("num");
+            let v = c.pole === "building_name" ? (r.building_name || r._nazwa) : r[c.pole];
+            if (c.pole === "_odl" && v != null) v = v < 1000 ? `${v} m` : `${(v / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} km`;
+            const url = c.pole === "data_source" ? safeSourceUrl(v) : "";
+            if (url) {
+              const a = document.createElement("a");
+              a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "zasób dane.gov.pl";
+              td.append(a);
+            } else {
+              td.textContent = fmt(c.pole, v);
+            }
+            tr.append(td);
+          });
+          body.append(tr);
+        });
+        document.getElementById("table-info").textContent =
+          `${rows.length.toLocaleString("pl-PL")} AED · ${allCols.length} kolumn${role === "admin" ? " (w tym chronione)" : " jawnych"}`;
+        const nav = document.getElementById("table-pages");
+        nav.hidden = pages <= 1;
+        document.getElementById("t-label").textContent = `Strona ${tablePage} z ${pages}`;
+        document.getElementById("t-prev").disabled = tablePage <= 1;
+        document.getElementById("t-next").disabled = tablePage >= pages;
+        document.getElementById("t-prev").onclick = () => { tablePage -= 1; renderTable(items); };
+        document.getElementById("t-next").onclick = () => { tablePage += 1; renderTable(items); };
+      }
+
+      // ---- Mapa: te same wyniki na mapie (Leaflet z serwisu, ładowany przy pierwszym użyciu)
+      let leafletReady = null;
+      let rmap = null;
+      let markers = null;
+      function loadLeaflet() {
+        if (window.L) return Promise.resolve();
+        if (!leafletReady) {
+          leafletReady = new Promise((resolve, reject) => {
+            const css = document.createElement("link");
+            css.rel = "stylesheet"; css.href = "/vendor/leaflet/leaflet.css";
+            document.head.append(css);
+            const js = document.createElement("script");
+            js.src = "/vendor/leaflet/leaflet.js"; js.onload = resolve; js.onerror = reject;
+            document.head.append(js);
+          });
+        }
+        return leafletReady;
+      }
+      const COLORS = { "24/7": "#0a7d3e", GODZINY_OTWARCIA: "#d88a00", TYLKO_PERSONEL: "#b3261e" };
+      async function renderMap(items) {
+        if (view !== "mapa") return;
+        await loadLeaflet();
+        if (!rmap) {
+          rmap = L.map("rmap").setView([52.07, 19.48], 6);
+          L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">współtwórcy OpenStreetMap</a>' }).addTo(rmap);
+          markers = L.layerGroup().addTo(rmap);
+          locateControl().addTo(rmap);
+        }
+        rmap.invalidateSize();
+        markers.clearLayers();
+        const renderer = items.length > 1500 ? L.canvas({ padding: 0.3 }) : L.svg();  // duże zestawy: canvas
+        const pts = [];
+        items.forEach((it) => {
+          const st = it.standard || {};
+          const ll = [it.szerokosc, it.dlugosc];
+          pts.push(ll);
+          const box = document.createElement("div");
+          box.className = "rpopup";
+          appendText(box, "h3", "", cardHeading(it));
+          const adr = cardPlace(it).rest;
+          if (adr) appendText(box, "p", "", adr);
+          const where = [it.opis_lokalizacji || st.exact_location,
+                         st.is_indoor === true ? "wewnątrz budynku" : st.is_indoor === false ? "na zewnątrz budynku" : ""].filter(Boolean).join(" · ");
+          if (where) appendText(box, "p", "", where);
+          if (it.odleglosc_m != null) appendText(box, "p", "", `${it.odleglosc_m} m od Ciebie`);
+          appendText(box, "p", "", [st.availability_type === "24/7" ? "Dostępny 24/7" : st.availability_type === "GODZINY_OTWARCIA"
+            ? "W godzinach otwarcia" : st.availability_type === "TYLKO_PERSONEL" ? "Tylko personel" : "Brak informacji o dostępie",
+            st.is_locked === false ? "bez klucza i kodu" : st.is_locked === true ? "wymaga klucza lub kodu" : "",
+            LABELS[st.operational_status] && st.operational_status !== "NIEZNANY" ? LABELS[st.operational_status].toLowerCase() : ""]
+            .filter(Boolean).join(" · "));
+          const godz = st.opening_hours || it.godziny_dostepnosci;
+          if (godz) appendText(box, "p", "", `Godziny: ${godz}`);
+          const a = document.createElement("a");
+          a.href = `https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=${it.szerokosc},${it.dlugosc}`;
+          a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = "Prowadź do AED";
+          box.append(a);
+          L.circleMarker(ll, { renderer, radius: 7, weight: 2, color: "#fff", fillOpacity: 1,
+                               fillColor: COLORS[st.availability_type] || "#7a8794" }).bindPopup(box).addTo(markers);
+        });
+        if (mode?.typ === "najblizsze") {
+          const me = [mode.lat, mode.lon];
+          L.circleMarker(me, { radius: 8, weight: 3, color: "#fff", fillColor: "#0066a4", fillOpacity: 1 })
+            .bindTooltip("Twoja lokalizacja").addTo(markers);
+          pts.push(me);
+        }
+        fitResults(pts);
+      }
+      // Widok na wyniki: punkty odstające (np. błędne współrzędne z innego miasta, > 30 km od mediany) nie
+      // rozciągają mapy na pół Europy; nadal są na mapie. Dopasowanie po ułożeniu panelu (wcześniej ma 0 px).
+      function fitResults(pts) {
+        if (!pts.length) return;
+        const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor((xs.length - 1) / 2)];
+        const lat0 = med(pts.map((p) => p[0])), lon0 = med(pts.map((p) => p[1]));
+        const km = (p) => Math.hypot((p[0] - lat0) * 111.2, (p[1] - lon0) * 111.2 * Math.cos(lat0 * Math.PI / 180));
+        const near = pts.filter((p) => km(p) <= 30);
+        const use = pts.length >= 3 && near.length >= 0.75 * pts.length ? near : pts;
+        requestAnimationFrame(() => {
+          rmap.invalidateSize();
+          rmap.fitBounds(L.latLngBounds(use).pad(0.15), { maxZoom: 16 });
+        });
+      }
+      // Przycisk „Moja lokalizacja”: centruje mapę na użytkowniku i zaznacza jego położenie
+      let meMarker = null;
+      function locateControl() {
+        const Ctl = L.Control.extend({
+          options: { position: "topleft" },
+          onAdd() {
+            const btn = L.DomUtil.create("button", "map-locate");
+            btn.type = "button";
+            btn.title = "Pokaż moją lokalizację";
+            btn.setAttribute("aria-label", "Pokaż moją lokalizację");
+            btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"></circle>' +
+              '<path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path><circle cx="12" cy="12" r="7"></circle></svg>';
+            L.DomEvent.disableClickPropagation(btn);
+            L.DomEvent.on(btn, "click", () => {
+              if (!navigator.geolocation) { btn.title = "Przeglądarka nie udostępnia lokalizacji"; return; }
+              btn.classList.add("is-busy");
+              navigator.geolocation.getCurrentPosition((pos) => {
+                btn.classList.remove("is-busy");
+                const me = [pos.coords.latitude, pos.coords.longitude];
+                if (meMarker) meMarker.remove();
+                meMarker = L.circleMarker(me, { radius: 8, weight: 3, color: "#fff", fillColor: "#0066a4", fillOpacity: 1 })
+                  .bindTooltip("Twoja lokalizacja").addTo(rmap);
+                rmap.setView(me, Math.max(rmap.getZoom(), 15));
+              }, () => {
+                btn.classList.remove("is-busy");
+                btn.title = "Nie udało się ustalić lokalizacji (brak zgody przeglądarki?)";
+              }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+            });
+            return btn;
+          },
+        });
+        return new Ctl();
+      }
+
+      // „Znajdź najbliższe”: lokalizacja przeglądarki -> najbliższe AED z rejestru (API /aed-api/nearest)
+      async function nearestAt(lat, lon) {
+        const currentRequest = ++requestId;
+        mode = { typ: "najblizsze", lat, lon };
+        tableSort = { pole: "_odl", dir: 1 };
+        // w obrębie tego, co wybrano wyżej: miejsce (obszar), fraza i filtry
+        const params = currentParams();
+        params.delete("lat");
+        params.delete("lon");
+        Object.entries({ lat, lon, n: "10", tylko_dostepne: "0" }).forEach(([k, v]) => params.set(k, String(v)));
+        try {
+          const response = await fetch(`/aed-api/nearest?${params}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+          if (!response.ok) throw new Error(`Błąd serwera (${response.status})`);
+          const data = await response.json();
+          if (currentRequest !== requestId) return;
+          const area = params.get("miejsce");
+          title.textContent = area ? `Najbliższe AED: ${area}` : "Najbliższe AED";
+          list.replaceChildren();
+          data.wyniki.forEach((item) => list.append(resultCard(item)));
+          total = data.wyniki.length;
+          allItems = data.wyniki;
+          count.textContent = total ? `${total} AED` : "";
+          notice.hidden = total > 0;
+          notice.textContent = total ? "" : "Brak AED spełniających wybrane kryteria. Zmień miejsce lub filtry.";
+          applyView();
+        } catch (error) {
+          if (currentRequest !== requestId) return;
+          notice.textContent = `Nie udało się pobrać najbliższych AED. ${error.message}`;
+        }
+      }
+      document.getElementById("nearest").addEventListener("click", () => {
+        const currentRequest = ++requestId;
+        showResults();
+        list.replaceChildren();
+        count.textContent = "";
+        pagination.hidden = true;
+        notice.hidden = false;
+        if (!navigator.geolocation) {
+          notice.textContent = "Ta przeglądarka nie udostępnia lokalizacji. Wpisz adres lub miejscowość.";
+          return;
+        }
+        if (placeParams().lat != null) {  // pozycja już ustalona pinezką w polu miejsca
+          nearestAt(myPos[0], myPos[1]);
+          return;
+        }
+        notice.textContent = "Ustalanie Twojej lokalizacji…";
+        navigator.geolocation.getCurrentPosition((position) => {
+          if (currentRequest !== requestId) return;
+          nearestAt(position.coords.latitude, position.coords.longitude);
+        }, () => {
+          if (currentRequest !== requestId) return;
+          notice.textContent = "Nie udało się ustalić lokalizacji. Zezwól przeglądarce na dostęp do lokalizacji albo wpisz adres.";
+        }, { enableHighAccuracy: true, timeout: 8000 });
+      });
+
+      const placeLocate = document.getElementById("place-locate");
+      placeLocate.addEventListener("click", () => {
+        if (!navigator.geolocation) { placeLocate.title = "Przeglądarka nie udostępnia lokalizacji"; return; }
+        placeLocate.classList.add("is-busy");
+        navigator.geolocation.getCurrentPosition((pos) => {
+          placeLocate.classList.remove("is-busy");
+          myPos = [pos.coords.latitude, pos.coords.longitude];
+          placeInput.value = MY_PLACE;
+          placeLocate.classList.add("is-on");
+          closeSuggest();
+          offset = 0;
+          search();
+        }, () => {
+          placeLocate.classList.remove("is-busy");
+          placeLocate.title = "Nie udało się ustalić lokalizacji (brak zgody przeglądarki?)";
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+      });
+      placeInput.addEventListener("input", () => placeLocate.classList.toggle("is-on", placeInput.value.trim() === MY_PLACE && !!myPos));
+      placeInput.addEventListener("focus", () => { if (placeInput.value === "Polska") placeInput.select(); });
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        clearTimeout(suggestTimer);  // spóźnione podpowiedzi nie mogą zasłonić wyników
+        ++suggestReq;
+        closeSuggest();
+        offset = 0;
+        search();
+      });
+      document.querySelector(".advanced-toggle").addEventListener("click", (event) => {
+        const button = event.currentTarget;
+        const open = button.getAttribute("aria-expanded") !== "true";
+        button.setAttribute("aria-expanded", String(open));
+        document.getElementById("advanced-fields").classList.toggle("is-open", open);
+      });
+      document.getElementById("clear").addEventListener("click", () => {
+        form.reset();  // pole miejsca wraca do „Polska”
+        placeLocate.classList.remove("is-on");
+        Object.keys(state).forEach((k) => delete state[k]);
+        Object.keys(quickState).forEach((k) => delete quickState[k]);
+        closeSuggest();
+        offset = 0;
+        loadFilters();
+        mode = null;                // stan początkowy: sama wyszukiwarka, bez wyników
+        allItems = null;
+        ++requestId;
+        resultsWrap.hidden = true;
+      });
+      previous.addEventListener("click", () => {
+        offset = Math.max(0, offset - pageSize);
+        search();
+      });
+      next.addEventListener("click", () => {
+        if (offset + pageSize < total) {
+          offset += pageSize;
+          search();
+        }
+      });
+      loadRole().then(() => {
+        if (new URLSearchParams(location.search).has("zalogowano")) history.replaceState(null, "", "/");  // powrót z portalu
+        // wyniki pojawiają się dopiero po wyszukaniu albo „Znajdź najbliższe”
+      });
+    })();
+  </script>
+</body>
+</html>

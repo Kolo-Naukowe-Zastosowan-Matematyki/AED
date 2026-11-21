@@ -3,3 +3,11 @@ __pycache__/
 .venv/
 *.log
 node_modules/
+data/server.pid
+data/zgloszenia/
+_portal_src/
+data/uwagi/
+data/chronione/
+data/rejestr_aed.xlsx
+data/rejestr_aed.csv
+data/diagnoza.json

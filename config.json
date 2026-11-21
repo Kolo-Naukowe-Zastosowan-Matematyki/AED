@@ -1,12 +1,25 @@
 {
   "danegov": {
     "enabled": true,
-    "queries": ["defibrylator", "defibrylatory", "AED defibrylator"],
+    "queries": [],
     "dataset_ids": [],
     "resource_ids": []
   },
-  "osm": {
-    "enabled": true,
-    "path": "../material/PL.geojson"
+  "serwis": {
+    "_opis": "Serwis AED (instancja B). url: publiczny adres serwisu dla linków z portalu; puste = http://localhost:<port serwisu>.",
+    "tytul": "Rejestr AED",
+    "url": ""
+  },
+  "zbior_aed": {
+    "_opis": "Zbiór /pl/dataset/aed,system-ewidencji-zasobow-aed w makiecie portalu. Adresy względne prowadzą do serwisu AED. Puste pola = wartości domyślne z portal/backend/aed_dataset.py.",
+    "rejestr_url": "/",
+    "zrodlo_url": "",
+    "dostawca": {
+      "id": "",
+      "nazwa": "",
+      "slug": ""
+    },
+    "czestotliwosc": "Codziennie",
+    "licencja": "CC0 1.0"
   }
 }

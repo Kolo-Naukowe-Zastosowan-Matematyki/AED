@@ -3,6 +3,7 @@
 Uruchomienie:  python -m unittest discover -s tests -v
 """
 import sys
+import json
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -10,8 +11,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scraping import danegov as dg  # noqa: E402
-from backend.hours import is_open  # noqa: E402
+from rozwiazanie.scraping import danegov as dg  # noqa: E402
+from rozwiazanie.backend.hours import is_open  # noqa: E402
 
 SAT_10 = datetime(2026, 11, 21, 10, 0)   # sobota
 MON_10 = datetime(2026, 11, 23, 10, 0)   # poniedziałek
@@ -83,6 +84,146 @@ class DaneGovTest(unittest.TestCase):
         self.assertEqual((szkola.szerokosc, szkola.dlugosc), (54.352, 18.6466))  # X/Y rozpoznane i zamienione
         self.assertEqual(szkola.opis_lokalizacji, "hol przy portierni")
         self.assertEqual(len(report), 2)
+
+
+class AedDatasetTest(unittest.TestCase):
+    """Zbiór „System Ewidencji Zasobów AED” w formacie API portalu (bez magazynu danych)."""
+
+    def setUp(self):
+        from portal.backend.aed_dataset import AedDataset
+        self.ds = AedDataset({})
+        self.origin = "http://localhost:8000"
+
+    def test_search(self):
+        self.assertTrue(self.ds.search_matches({"q": "AED", "model[terms]": "dataset,resource"}))
+        self.assertFalse(self.ds.search_matches({"q": "drogi"}))
+        self.assertFalse(self.ds.search_matches({"q": "aed", "institution[id][terms]": "5"}))
+        body = self.ds.patch_search(502, b"", {"q": "defibrylator"}, self.origin)
+        import json
+        resp = json.loads(body)
+        self.assertEqual(resp["meta"]["count"], 1)
+        self.assertEqual(resp["data"][0]["id"], "dataset-aed")
+
+    def test_resources(self):
+        status, _, res = self.ds.handle("/datasets/aed,system-ewidencji-zasobow-aed/resources", {}, self.origin)
+        self.assertEqual(status, 200)
+        self.assertEqual([r["attributes"]["title"] for r in res["data"]], ["Rejestr AED"])
+        status, _, tab = self.ds.handle("/resources/aed-rejestr/data", {"page": "1"}, self.origin)
+        self.assertEqual(status, 200)
+        self.assertIn("col1", tab["meta"]["headers_map"])
+        self.assertIsNone(self.ds.handle("/datasets/1354", {}, self.origin))
+
+
+class ProxyTest(unittest.TestCase):
+    def test_no_writes_to_production(self):
+        from portal.backend import portal_proxy
+        status, _, body = portal_proxy.forward("POST", "https://api.dane.gov.pl/1.4/datasets/1354/comments", {}, b"{}")
+        self.assertEqual(status, 403)
+
+    def test_comment_queue(self):
+        import tempfile
+        from pathlib import Path
+        from portal.backend.uwagi import Comments
+        with tempfile.TemporaryDirectory() as d:
+            subs = Comments(Path(d))
+            rec = subs.add("zbior:aed", {"data": {"type": "comment", "attributes": {
+                "comment": "Zgłoszenie nowego AED", "applicant_email": "x@example.com"}}})
+            self.assertEqual(rec["status"], "do_weryfikacji_przez_dostawce")
+            self.assertNotIn("x@example.com", json.dumps(subs.list()))
+            with self.assertRaises(ValueError):
+                subs.add("zbior:aed", {"data": {"attributes": {"comment": ""}}})
+
+
+class StoreSearchTest(unittest.TestCase):
+    """Wyszukiwarka rejestru (serwis AED, strona główna)."""
+
+    def setUp(self):
+        import tempfile
+        from rozwiazanie.backend.schema import AED
+        from rozwiazanie.backend.store import Store
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.store = Store(Path(self.tempdir.name), {})
+        self.store.by_source["danegov"] = [
+            AED("aed-1", 52.2, 21.0, "danegov", "", "", nazwa_obiektu="Szkoła Łódzka",
+                adres="ul. Główna 1, Warszawa", dostep="publiczny", extra={"zbior": "Rejestr AED"}),
+            AED("aed-2", 52.3, 21.1, "danegov", "", "", nazwa_obiektu="Przychodnia",
+                adres="ul. Krótka 2, Warszawa", dostep="w_godzinach"),
+        ]
+        self.store.by_source["danegov"].append(
+            AED("aed-3", 50.0, 19.9, "danegov", "", "", nazwa_obiektu="Szkoła Kraków",
+                adres="Rynek, Kraków", dostep="publiczny"))
+        self.store._rebuild()
+
+    def test_search_ignores_accents_and_filters_location(self):
+        result = self.store.search(query="szkola", location="lodzka")
+        self.assertEqual(result["razem"], 1)
+        self.assertEqual(result["wyniki"][0]["id_aed"], "aed-1")
+
+    def test_search_filters_access_source_and_paginates(self):
+        result = self.store.search(access="publiczny", source="danegov", limit=1)
+        self.assertEqual(result["razem"], 2)
+        self.assertEqual([item["id_aed"] for item in result["wyniki"]], ["aed-1"])
+        self.assertEqual(self.store.search(public_only=True, offset=1)["wyniki"][0]["id_aed"], "aed-3")
+
+    def test_register_and_nearest(self):
+        self.assertEqual(self.store.register()["liczba"], 3)
+        near = self.store.nearest(50.01, 19.91, n=1, only_available=False)
+        self.assertEqual(near[0]["id_aed"], "aed-3")
+        self.assertLess(near[0]["odleglosc_m"], 2000)
+
+
+    def test_whole_country_and_distance_order(self):
+        self.assertEqual(self.store.search(location="Polska")["razem"], 3)  # domyślna wartość pola miejsca
+        res = self.store.search(lat=50.01, lon=19.91)
+        self.assertEqual(res["wyniki"][0]["id_aed"], "aed-3")
+        self.assertIn("odleglosc_m", res["wyniki"][0])
+
+    def test_nearest_within_criteria(self):
+        near = self.store.nearest(50.01, 19.91, n=1, only_available=False, location="Warszawa")
+        self.assertEqual(near[0]["id_aed"], "aed-1")  # najbliższe w wybranym miejscu, nie w ogóle
+
+    def test_filter_options_follow_location(self):
+        def dostepnosc(defs):
+            f = next(f for c in defs["kategorie"] for f in c["filtry"] if f["pole"] == "availability_type")
+            return {o["wartosc"]: o["liczba"] for o in f["opcje"] if o["liczba"]}
+        self.assertEqual(sum(dostepnosc(self.store.filter_defs("publiczny")).values()), 3)
+        self.assertEqual(dostepnosc(self.store.filter_defs("publiczny", location="Kraków")), {"24/7": 1})
+
+
+class TercTest(unittest.TestCase):
+    def setUp(self):
+        from rozwiazanie.backend.teryt import Terc, _czytaj
+        self.terc = Terc(_czytaj((Path(__file__).parent / "dane" / "terc.csv").read_bytes()))
+
+    def test_area_from_city(self):
+        self.assertEqual(self.terc.obszar("Legionowo", "mazowieckie"),
+                         {"powiat": "powiat legionowski", "gmina": "gmina Legionowo"})
+        self.assertEqual(self.terc.obszar("Radzymin", "mazowieckie")["powiat"], "powiat wołomiński")
+        # miasto na prawach powiatu wygrywa z gminą wiejską o tej samej nazwie
+        self.assertEqual(self.terc.obszar("Przemyśl", "podkarpackie")["powiat"], "Przemyśl (miasto na prawach powiatu)")
+        self.assertEqual(self.terc.obszar("Nieznane", "mazowieckie"), {})
+
+    def test_search_and_suggest_by_district(self):
+        import tempfile
+        from rozwiazanie.backend.schema import AED
+        from rozwiazanie.backend.store import Store
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp), {})
+            store.terc = self.terc
+            store.by_source["danegov"] = [
+                AED("a", 52.395, 20.931, "danegov", "", "", adres="ul. Piłsudskiego 41, 05-120 Legionowo"),
+                AED("b", 52.327, 21.108, "danegov", "", "", adres="al. Piłsudskiego 95, 05-270 Marki")]
+            store._rebuild()
+            self.assertEqual([r["id_aed"] for r in store.search(location="powiat legionowski")["wyniki"]], ["a"])
+            self.assertEqual(store.search(location="gmina Marki")["razem"], 1)
+            sug = {s["tekst"]: s["typ"] for s in store.suggest("legion")}
+            self.assertEqual(sug.get("powiat legionowski"), "powiat")
+            self.assertEqual(sug.get("gmina Legionowo"), "gmina")
+            self.assertEqual(store.suggest("pols")[0]["tekst"], "Polska")
+            defs = store.filter_defs("publiczny", location="Legionowo")  # filtr „Miejscowość” tylko z wyników
+            miasta = next(f for c in defs["kategorie"] for f in c["filtry"] if f["pole"] == "city")["opcje"]
+            self.assertEqual([o["wartosc"] for o in miasta], ["Legionowo"])
 
 
 if __name__ == "__main__":

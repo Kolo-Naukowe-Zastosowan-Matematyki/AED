@@ -1,20 +1,8 @@
-"""Ustalanie roli użytkownika serwisu rejestru AED: logowanie kontem dane.gov.pl.
-
-Serwis nie ma własnych haseł. Przycisk „Zaloguj się przez dane.gov.pl” prowadzi do formularza logowania portalu
-(w prototypie: makieta portalu, konta demo w portal/backend/konta.py). Frontend portalu zapisuje token JWT
-w ciasteczku <prefiks>apiauthtoken (na localhost: local_apiauthtoken, wspólne dla portów 8000 i 8001), a serwis
-sprawdza go zapytaniem GET {api_url}/auth/user (albo z nagłówka Authorization: Bearer <token>).
-
-Rola z konta: "aed_rola" == "sluzby_aed" (konto służb) albo "system_role" == "admin" -> dostęp do kolumn
-chronionych. Na produkcji te pola dopisuje wsad mcod (mcod_wsad/README.md). Brak tokenu, zły token albo błąd
-połączenia = rola publiczna. Filtrowanie kolumn robi serwer (columns.py).
-"""
+"""Weryfikacja konta i tokenu przez lokalne API mcod."""
 from __future__ import annotations
 
 import json
 import logging
-import threading
-import time
 import urllib.error
 import urllib.request
 from http.cookies import SimpleCookie
@@ -23,7 +11,6 @@ from .columns import ROLE_ADMIN, ROLE_PUBLIC
 
 log = logging.getLogger("aed.auth")
 TOKEN_COOKIES = ("local_apiauthtoken", "apiauthtoken")  # ciasteczka frontendu portalu (prefiks zależny od domeny)
-PORTAL_CACHE_TTL = 60
 ROLE_SLUZBY = "sluzby_aed"
 
 
@@ -32,8 +19,6 @@ class Auth:
         cfg = cfg or {}
         self.api_url = (cfg.get("api_url") or "").rstrip("/")  # server.py ustawia API makiety portalu
         self.login_url = cfg.get("logowanie_url") or ""
-        self.lock = threading.Lock()
-        self.portal_cache: dict[str, tuple[float, dict]] = {}  # token -> (czas, konto)
 
     # ------------------------------------------------------------ token z żądania
     @staticmethod
@@ -61,8 +46,6 @@ class Auth:
     def logout(self, headers):
         """Koniec sesji w portalu (POST /auth/logout z tokenem) i w pamięci serwisu."""
         token = self.token_from(headers)
-        with self.lock:
-            self.portal_cache.pop(token, None)
         if token and self.api_url:
             req = urllib.request.Request(f"{self.api_url}/auth/logout", data=b"{}", method="POST",
                                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
@@ -84,11 +67,6 @@ class Auth:
 
     # ------------------------------------------------------------ konto z portalu
     def _portal_account(self, token: str) -> dict:
-        now = time.time()
-        with self.lock:
-            hit = self.portal_cache.get(token)
-            if hit and now - hit[0] < PORTAL_CACHE_TTL:
-                return hit[1]
         acc = {"rola": ROLE_PUBLIC, "uzytkownik": ""}
         req = urllib.request.Request(f"{self.api_url}/auth/user",
                                      headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
@@ -97,16 +75,14 @@ class Auth:
                 acc = self.account_from(json.loads(resp.read().decode("utf-8")))
         except (urllib.error.URLError, ValueError, OSError) as exc:
             log.info("Portal nie potwierdził tokenu (%s), rola publiczna", exc)
-        with self.lock:
-            self.portal_cache[token] = (now, acc)
         return acc
 
     @staticmethod
     def account_from(payload: dict) -> dict:
         """Odpowiedź JSON:API z GET /auth/user: data.attributes.aed_rola / system_role / fullname."""
         attrs = ((payload or {}).get("data") or {}).get("attributes") or {}
-        sluzby = attrs.get("aed_rola") == ROLE_SLUZBY or attrs.get("system_role") == "admin"
-        return {"rola": ROLE_ADMIN if sluzby else ROLE_PUBLIC,
+        role = ROLE_SLUZBY if attrs.get("aed_rola") == ROLE_SLUZBY else ROLE_PUBLIC
+        return {"rola": ROLE_ADMIN if attrs.get("system_role") == "admin" else role,
                 "uzytkownik": str(attrs.get("fullname") or attrs.get("email") or "")}
 
     @staticmethod

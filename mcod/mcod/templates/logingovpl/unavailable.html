@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="pl">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Logowanie przez login.gov.pl</title></head>
+<body><main>{% if local_demo %}
+<h1>Logowanie do demonstracji rejestru AED</h1>
+<p>Ta instancja używa lokalnych kont mcod. Logowanie przez państwowy login.gov.pl wymaga przyłączenia instancji do Węzła Krajowego.</p>
+{% else %}<h1>Logowanie przez login.gov.pl jest niedostępne</h1>
+<p>Portal nie może podpisać żądania logowania. Administrator instancji musi sprawdzić klucz i certyfikat Węzła Krajowego.</p>
+{% endif %}
+<p><a href="{{ login_url }}">Zaloguj się e-mailem i hasłem</a></p></main></body>
+</html>

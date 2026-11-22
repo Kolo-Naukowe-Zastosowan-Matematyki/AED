@@ -34,6 +34,7 @@ class Terc:
     def __init__(self, rows: list[dict]):
         self.powiaty: dict[tuple[str, str], str] = {}
         self.gminy: dict[tuple[str, str], list[tuple[int, str, str, str]]] = {}
+        self.nazwy_gmin: set[str] = set()  # „gmina Legionowo” itd. (do podpowiedzi, także bez AED w rejestrze)
         for r in rows:
             woj, pow_, gmi, rodz = r.get("WOJ", ""), r.get("POW", ""), r.get("GMI", ""), r.get("RODZ", "")
             nazwa, dod = r.get("NAZWA", ""), r.get("NAZWA_DOD", "").lower()
@@ -44,6 +45,12 @@ class Terc:
                     else f"powiat {nazwa}"
             elif rodz in KOLEJNOSC_RODZ:
                 self.gminy.setdefault((woj, norm(nazwa)), []).append((KOLEJNOSC_RODZ[rodz], pow_, gmi, nazwa))
+                if rodz != "4":
+                    self.nazwy_gmin.add(f"gmina {nazwa}")
+
+    def obszary_do_podpowiedzi(self) -> list[tuple[str, str]]:
+        return [(p, "powiat") for p in sorted(set(self.powiaty.values()))] + \
+               [(g, "gmina") for g in sorted(self.nazwy_gmin)]
 
     @classmethod
     def z_katalogu(cls, katalog: Path) -> "Terc | None":

@@ -6,7 +6,7 @@ daty, województwo), tutaj tylko:
   1. kolumny z tabeli wzorca common/aed_columns.json, chronione tylko dla administratora,
   2. wartości chronione od dostawców (data/chronione) nadpisują puste pola chronione,
   3. possible_duplicate: ten sam SN więcej niż raz albo inny AED w odległości do 15 m,
-  4. zapis: CSV z separatorem „;” (nagłówek = nazwy techniczne), XLSX jeden arkusz, TRUE/FALSE, RRRR-MM-DD.
+  4. zapis: CSV z separatorem „;” (nagłówek = polskie nazwy pól), XLSX jeden arkusz, TRUE/FALSE, RRRR-MM-DD.
 Kolejność kroków jak w agregacji DGA w mcod (resources/dga_utils.py: create_main_dga_df).
 """
 from __future__ import annotations
@@ -74,12 +74,23 @@ def _duplikaty(rows: list[dict]) -> set[int]:
 
 
 def _data(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
     except (TypeError, ValueError):
         return None
+
+
+def status_sprawnosci(row, dzis=None):
+    dzis = dzis or date.today()
+    for field in ("pad_expiration_date", "battery_expiration_date"):
+        deadline = _data(row.get(field))
+        if deadline and deadline < dzis:
+            return "PO_TERMINIE"
+    return row.get("operational_status")
 
 
 def standard_rekordu(r, data_pobrania: str = "") -> dict:
@@ -104,6 +115,7 @@ def wiersz(r, chronione: dict | None, data_pobrania: str = "") -> dict:
             out[k] = _data(v)
         elif v == "":
             out[k] = None
+    out["operational_status"] = status_sprawnosci(out)
     return out
 
 
@@ -134,10 +146,10 @@ def _txt(v) -> str:
 
 
 def do_csv(cols: list[dict], rows: list[dict]) -> bytes:
-    """CSV do bezpośredniego importu: separator „;”, nagłówek = nazwy techniczne, UTF-8 z BOM (Excel)."""
+    """CSV do bezpośredniego importu: separator „;”, nagłówek = polskie nazwy pól, UTF-8 z BOM (Excel)."""
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=CSV_SEP, lineterminator="\r\n")
-    w.writerow([c["pole"] for c in cols])
+    w.writerow([c["nazwa"] for c in cols])
     for row in rows:
         w.writerow([_txt(row.get(c["pole"])) for c in cols])
     return ("\ufeff" + buf.getvalue()).encode("utf-8")
@@ -162,7 +174,7 @@ def _xlsx_openpyxl(cols, rows) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "AED"
-    ws.append([c["pole"] for c in cols])
+    ws.append([c["nazwa"] for c in cols])
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="1F4E78")
@@ -207,7 +219,7 @@ def _xlsx_stdlib(cols, rows) -> bytes:
         return f'<c r="{ref}" t="inlineStr"><is><t>{escape(_txt(v))}</t></is></c>'
 
     lines = []
-    for ri, values in enumerate([[c["pole"] for c in cols]] +
+    for ri, values in enumerate([[c["nazwa"] for c in cols]] +
                                 [[row.get(c["pole"]) for c in cols] for row in rows], start=1):
         cells = "".join(cell(f"{_col(ci)}{ri}", v) for ci, v in enumerate(values, start=1) if v not in (None, ""))
         lines.append(f'<row r="{ri}">{cells}</row>')

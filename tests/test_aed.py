@@ -86,54 +86,6 @@ class DaneGovTest(unittest.TestCase):
         self.assertEqual(len(report), 2)
 
 
-class AedDatasetTest(unittest.TestCase):
-    """Zbiór „System Ewidencji Zasobów AED” w formacie API portalu (bez magazynu danych)."""
-
-    def setUp(self):
-        from portal.backend.aed_dataset import AedDataset
-        self.ds = AedDataset({})
-        self.origin = "http://localhost:8000"
-
-    def test_search(self):
-        self.assertTrue(self.ds.search_matches({"q": "AED", "model[terms]": "dataset,resource"}))
-        self.assertFalse(self.ds.search_matches({"q": "drogi"}))
-        self.assertFalse(self.ds.search_matches({"q": "aed", "institution[id][terms]": "5"}))
-        body = self.ds.patch_search(502, b"", {"q": "defibrylator"}, self.origin)
-        import json
-        resp = json.loads(body)
-        self.assertEqual(resp["meta"]["count"], 1)
-        self.assertEqual(resp["data"][0]["id"], "dataset-aed")
-
-    def test_resources(self):
-        status, _, res = self.ds.handle("/datasets/aed,system-ewidencji-zasobow-aed/resources", {}, self.origin)
-        self.assertEqual(status, 200)
-        self.assertEqual([r["attributes"]["title"] for r in res["data"]], ["Rejestr AED"])
-        status, _, tab = self.ds.handle("/resources/aed-rejestr/data", {"page": "1"}, self.origin)
-        self.assertEqual(status, 200)
-        self.assertIn("col1", tab["meta"]["headers_map"])
-        self.assertIsNone(self.ds.handle("/datasets/1354", {}, self.origin))
-
-
-class ProxyTest(unittest.TestCase):
-    def test_no_writes_to_production(self):
-        from portal.backend import portal_proxy
-        status, _, body = portal_proxy.forward("POST", "https://api.dane.gov.pl/1.4/datasets/1354/comments", {}, b"{}")
-        self.assertEqual(status, 403)
-
-    def test_comment_queue(self):
-        import tempfile
-        from pathlib import Path
-        from portal.backend.uwagi import Comments
-        with tempfile.TemporaryDirectory() as d:
-            subs = Comments(Path(d))
-            rec = subs.add("zbior:aed", {"data": {"type": "comment", "attributes": {
-                "comment": "Zgłoszenie nowego AED", "applicant_email": "x@example.com"}}})
-            self.assertEqual(rec["status"], "do_weryfikacji_przez_dostawce")
-            self.assertNotIn("x@example.com", json.dumps(subs.list()))
-            with self.assertRaises(ValueError):
-                subs.add("zbior:aed", {"data": {"attributes": {"comment": ""}}})
-
-
 class StoreSearchTest(unittest.TestCase):
     """Wyszukiwarka rejestru (serwis AED, strona główna)."""
 
@@ -159,6 +111,19 @@ class StoreSearchTest(unittest.TestCase):
         result = self.store.search(query="szkola", location="lodzka")
         self.assertEqual(result["razem"], 1)
         self.assertEqual(result["wyniki"][0]["id_aed"], "aed-1")
+
+    def test_expiration_matches_details_filters_nearest_and_public_csv(self):
+        self.store.protected.values["aed-1"] = {"battery_expiration_date": "2000-01-01", "aed_sn": "PRIVATE"}
+        self.store.std[0]["operational_status"] = "SPRAWNY"
+        filters = {"operational_status": "PO_TERMINIE"}
+        self.assertEqual(self.store.detail(0)["standard"]["operational_status"], "PO_TERMINIE")
+        self.assertEqual(self.store.search(filtry=filters)["razem"], 1)
+        self.assertEqual(self.store.search(filtry={"operational_status": "SPRAWNY"})["razem"], 0)
+        self.assertEqual(self.store.nearest(52, 21, filtry=filters)[0]["id_aed"], "aed-1")
+        export = self.store.export_csv("sluzby_aed")
+        self.assertIn(b"PO_TERMINIE", export)
+        self.assertNotIn(b"PRIVATE", export)
+        self.assertNotIn(b"battery_expiration_date", export)
 
     def test_search_filters_access_source_and_paginates(self):
         result = self.store.search(access="publiczny", source="danegov", limit=1)
@@ -224,6 +189,19 @@ class TercTest(unittest.TestCase):
             defs = store.filter_defs("publiczny", location="Legionowo")  # filtr „Miejscowość” tylko z wyników
             miasta = next(f for c in defs["kategorie"] for f in c["filtry"] if f["pole"] == "city")["opcje"]
             self.assertEqual([o["wartosc"] for o in miasta], ["Legionowo"])
+
+    def test_suggest_areas_without_records(self):
+        import tempfile
+        from rozwiazanie.backend.store import Store
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp), {})
+            store.terc = self.terc
+            store._rebuild()
+            sug = {s["tekst"]: s["typ"] for s in store.suggest("dolno")}
+            self.assertEqual(sug.get("dolnośląskie"), "województwo")  # 16 województw zawsze, także bez AED
+            sug = {s["tekst"]: s["typ"] for s in store.suggest("jabło")}
+            self.assertEqual(sug.get("gmina Jabłonna"), "gmina")
+            self.assertEqual({s["tekst"]: s["typ"] for s in store.suggest("wołom")}.get("powiat wołomiński"), "powiat")
 
 
 if __name__ == "__main__":

@@ -1,154 +1,83 @@
-# System Ewidencji Zasobów AED
+# RAED — Rejestr Defibrylatorów AED
 
-Prototyp na zadanie „Misja AED – Dane na ratunek”. Składa się z **dwóch niezależnych instancji**, które
-`server.py` uruchamia razem:
+RAED zbiera w jednym wykazie lokalizacje automatycznych defibrylatorów zewnętrznych (AED), które różne instytucje publikują w portalu danych. Mieszkaniec może znaleźć urządzenie na mapie, dyspozytor sprawdzić zgłoszoną sprawność, a redaktor poprawić dane u źródła. Każda pozycja zachowuje informację o swoim pochodzeniu. Projekt działa w lokalnej instancji oprogramowania **dane.gov.pl (mcod)**.
 
-| Instancja | Folder | Adres | Co to jest |
-| --- | --- | --- | --- |
-| **A. Portal dane.gov.pl** (makieta) | `portal/` | http://localhost:8000 | oryginalny frontend portalu (z `frontend_latest.zip`) i jego API. Jedyna zmiana to nowy zbiór „System Ewidencji Zasobów AED” |
-| **B. Serwis AED** | `rozwiazanie/` | http://localhost:8001 | osobny serwis z własnym frontendem, backendem i scrapingiem. Strona główna to Rejestr AED |
+**Zakres demonstracji.** Dołączony wykaz zawiera 74 pozycje z czterech miast. Krosno i Przemyśl mają po 21, Legionowo 24, a Marki 8. Wybranie „Polska” pokazuje wszystkie pozycje tego wykazu. Miejscowi dostawcy w demonstracji reprezentują cztery źródła. Ich nazwy, oryginalne adresy zasobów i warunki wykorzystania można sprawdzić w [pliku pochodzenia](jury/Zrodla-AED.csv).
 
-Portal nie ma nic wspólnego z serwisem poza tym, że zbiór AED do niego linkuje i z niego pobiera dane
-(tak jak prawdziwy portal pobiera zasób z adresu podanego przez dostawcę).
+## Materiały dla jury
 
-## Uruchomienie
-
-Wymagany Python 3.9 lub nowszy. Zbudowany frontend portalu jest już w `portal/frontend/dist`, więc Node.js nie jest potrzebny.
-
-**Windows:** dwuklik w `start.bat`. Skrypt zatrzymuje poprzednią instancję (restart), uruchamia obie instancje
-i sam otwiera portal w przeglądarce. `stop.bat` zatrzymuje serwer; można też zamknąć okno konsoli.
-
-Ręcznie:
-
-```
-cd aed-prototyp
-py server.py --open     # Windows (albo: python server.py)
-```
-
-Jeśli port jest zajęty albo zarezerwowany przez Windows (błąd 10013), portal spróbuje portów 8765–8784,
-a serwis 8785–8799. Porty można wskazać: `py server.py --port 8080 --serwis-port 8081`.
-Inne opcje: `--offline` (bez łączenia z dane.gov.pl, dane z pamięci podręcznej), `-v` (więcej logów).
-
-Testy (bez sieci): `python -m unittest discover -s tests -v`
-
-## Struktura
-
-```
-aed-prototyp/
-├── server.py              uruchamia obie instancje
-├── config.json            źródło danych (danegov), serwis, zbiór AED w portalu (zbior_aed)
-├── common/http.py         wspólne elementy serwerów HTTP
-├── portal/                INSTANCJA A: makieta dane.gov.pl
-│   ├── backend/
-│   │   ├── app.py             serwer: frontend portalu, API zbioru AED, proxy do dane.gov.pl
-│   │   ├── aed_dataset.py     zbiór AED w formacie API portalu 1.4 (wyszukiwarka, zbiór, zasoby, tabela, metadane)
-│   │   ├── serwis_client.py   pobieranie danych zasobów z API serwisu AED
-│   │   ├── portal_proxy.py    odczyt (tylko GET) z api.dane.gov.pl i cms.dane.gov.pl; zapisy są blokowane
-│   │   └── uwagi.py           „Zgłoś uwagi” do zbioru AED: kolejka dostawcy
-│   └── frontend/
-│       ├── build.py           budowanie portalu z frontend_latest.zip + jedna zmiana (link „Przejdź”)
-│       └── dist/              zbudowany portal
-├── rozwiazanie/                INSTANCJA B: serwis AED
-│   ├── frontend/
-│   │   ├── index.html         Rejestr AED: wyszukiwarka z filtrami (strona główna)
-│   │   └── vendor/leaflet/    Leaflet 1.9.4
-│   ├── backend/
-│   │   ├── app.py             serwer: strony serwisu i API /aed-api
-│   │   ├── store.py           magazyn rekordów AED, wyszukiwarka, najbliższe AED, eksport
-│   │   ├── schema.py          wzorcowy zakres danych
-│   │   ├── hours.py           „czy dostępny teraz” na podstawie godzin
-│   │   └── map_export.py      mapa AED (strona /mapa i plik mapa_aed.html)
-│   └── scraping/              pobieranie danych o AED z dane.gov.pl (danegov.py, run.py) i agregacja
-│                              wszystkich tabel do jednej we wzorcowym zakresie (agregacja.py)
-└── tests/
-```
-
-## A. Portal dane.gov.pl
-
-1. W zakładce **Dane** wpisz „AED”: zbiór „System Ewidencji Zasobów AED” pojawia się na liście jako osobny dataset.
-2. Strona zbioru `/pl/dataset/aed,system-ewidencji-zasobow-aed` wygląda jak każdy zbiór portalu
-   (np. `/pl/dataset/1354`): metadane, zakładki Dane / Warunki wykorzystywania / Historia zbioru, API.
-3. Zasoby:
-
-| Zasób | Typ | Strona zasobu | „Przejdź” prowadzi do |
-| --- | --- | --- | --- |
-| Rejestr AED | plik CSV, GeoJSON | widok tabelaryczny | rejestru w serwisie AED (`/`) |
-
-Ikony „Pobierz metadane” zwracają metadane jak w portalu: CSV (wiersz na zasób, kolumny zbioru, dostawcy i zasobu)
-oraz RDF/XML w DCAT-AP.
-
-Makieta tylko **czyta** z produkcyjnego dane.gov.pl. Zapisy (uwagi do innych zbiorów, propozycje danych, formularze,
-logowanie) dostają lokalną odpowiedź demo i nie wychodzą do dane.gov.pl. „Zgłoś uwagi” do zbioru AED trafia do
-kolejki dostawcy w `data/uwagi`.
-
-Ustawienia zbioru: `config.json` → `zbior_aed`. Adres względny `rejestr_url` prowadzi do
-serwisu AED, a jego publiczny adres można ustawić w `serwis.url`.
-
-## B. Serwis AED
-
-| Adres | Strona |
+| Materiał | Gdzie go znaleźć |
 | --- | --- |
-| `/` | Rejestr AED: wyszukiwanie po nazwie, miejscu i dostępie; „Znajdź najbliższe” pokazuje 10 najbliższych AED z odległością i nawigacją |
-| `/mapa` | mapa wszystkich AED; „Znajdź najbliższe” pokazuje Ciebie i najbliższy AED, „Strona główna” wraca do rejestru |
+| Prezentacja z krokami użytkownika, zrzutami z działającego prototypu i ograniczeniami | [Prezentacja techniczna (PDF)](prezentacja/Prezentacja-techniczna.pdf) |
+| Scenariusz do samodzielnego sprawdzenia | [Instrukcja dla jury](jury/Instrukcja.md) |
+| Publiczne dane do odczytu bez uruchamiania portalu | [Wykaz AED (CSV)](jury/Wykaz-AED.csv) i [źródła (CSV)](jury/Zrodla-AED.csv) |
+| Wzorcowy zakres danych dla dostawcy | [Wzorzec AED (XLSX)](jury/Wzorzec-AED.xlsx) |
+| Logotyp RAED | [JPG](ksiega_znaku/RAED.jpg) · [PNG](ksiega_znaku/RAED.png) · [PDF](ksiega_znaku/RAED.pdf) · [edytowalny SVG](ksiega_znaku/RAED.svg) |
+| Zasady stosowania logotypu | [Księga znaku (PDF)](ksiega_znaku/Ksiega-znaku-RAED.pdf) |
+| Prototyp i kod źródłowy | [Uruchomienie](#jak-uruchomić-prototyp) i [mapa kodu](#jak-działa-integracja-i-gdzie-jest-kod) |
 
-API serwisu:
+## Jak skorzystać z rejestru
 
-| Endpoint | Opis |
+1. Otwórz rejestr. Wyniki dla Polski wczytują się przy wejściu. Wybierz widok **Mapa**, **Tabela** lub **Lista**. Aby zawęzić wyniki, wpisz np. „Legionowo” i wybierz „Szukaj”.
+2. Na mapie otwórz znacznik. Sprawdź adres, opis miejsca i dostępne informacje o godzinach. W widoku listy możesz też przejść do źródła. Opcja „Znajdź najbliższe” wymaga zgody przeglądarki na użycie lokalizacji.
+3. Użyj filtrów, np. „Dostępny 24/7”. Brak wartości oznacza, że źródło nie podało informacji. Odległość do urządzenia ani wpis w wykazie nie potwierdzają jego bieżącej dostępności.
+4. Aby porównać wiele urządzeń, otwórz pełną tabelę, wybierz kolumny i pobierz wyniki. W górnym pasku możesz zmienić kontrast i wielkość tekstu. Na małym ekranie te opcje są pod przyciskiem „Czytelność”.
+5. Aby sprawdzić liczby dla obszaru, w portalu otwórz zbiór **System Ewidencji Zasobów AED – wykaz defibrylatorów**, zasób **Wykaz AED** i kartę **Wykres**. Wybierz województwo, powiat albo gminę. Widok historii pokazuje kolejne zapisane stany wspólnego wykazu. Data pomiaru to data publikacji w lokalnej instancji.
+
+## Jak dostawca przekazuje dane
+
+1. Na karcie zbioru AED otwórz **Wzorcowy zakres danych AED – szablon XLSX** i pobierz plik. Ten sam wzorzec jest w katalogu `jury`. Szablon ma własną kartę zasobu obok aktualnego wykazu CSV.
+2. W arkuszu **Wykaz publiczny** wpisz jedno urządzenie w każdym wierszu. Zachowaj 16 polskich nagłówków. Arkusz **Słownik pól** zawiera polskie nazwy, typy, wymagalność, widoczność i opisy 20 pól standardu. Cztery chronione pola są tam opisane dla dokumentacji. Ich wartości nie należą do pliku publicznego.
+3. W panelu redakcyjnym dostawca publikuje plik w zbiorze swojej instytucji i zaznacza **Uwzględnij publiczny plik w wykazie AED**. Wypełniony wzorzec XLSX lub CSV może być plikiem wejściowym. Dostawca określa warunki wykorzystania i odpowiada za aktualność danych źródłowych.
+4. Co minutę proces synchronizacji wyszukuje oznaczone, opublikowane zasoby. Ujednolica nazwy kolumn i współrzędne, łączy wiersze i aktualizuje zbiorczy wykaz oraz tabelę pochodzenia. Po wycofaniu pliku lub zdjęciu oznaczenia jego wiersze znikają z następnego przeliczenia. Wynik przetwarzania każdego źródła jest dostępny pod `/aed-api/sources`.
+
+Polityka demonstracji dopuszcza CC0 i CC BY z przypisaniem źródła. Pliki z inną licencją lub indywidualnymi warunkami trafiają do raportu pominięć. Dołączone pliki CSV mają kodowanie UTF-8 i separator średnikowy. Tabela w portalu używa polskich nazw kolumn. Nazwy w pobieranych plikach CSV i XLSX odpowiadają nazwom z rejestru. Programy korzystające z rekordów JSON mogą nadal używać technicznych identyfikatorów pól.
+
+## Kto widzi jakie dane
+
+| Osoba | Uprawnienia w demonstracji |
 | --- | --- |
-| `GET /aed-api/search?q=&miejsce=&dostep=&zrodlo=&publiczny=1&limit=&offset=` | wyszukiwarka rejestru |
-| `GET /aed-api/points`, `GET /aed-api/aed/{idx}` | punkty dla mapy i pełny rekord |
-| `GET /aed-api/nearest?lat=..&lon=..&n=3&tylko_dostepne=1` | najbliższe AED, np. dla dyspozytora |
-| `GET /aed-api/rejestr.json` | rejestr we wzorcowym zakresie dla portalu |
-| `GET /aed-api/export.xlsx`, `/aed-api/export.csv` | zagregowana tabela we wzorcowym zakresie (`common/aed_columns.json`); administrator dostaje też kolumny chronione |
-| `GET /aed-api/export.geojson`, `/aed-api/mapa_aed.html` | pliki do pobrania |
-| `GET /aed-api/kolumny`, `GET /aed-api/auth/rola`, `GET /aed-api/auth/zaloguj`, `POST /aed-api/auth/logout` | tabela kolumn, rola i konto z portalu, przejście do logowania w portalu, wylogowanie |
-| `GET /aed-api/stats`, `GET /aed-api/sources` | liczniki oraz stan źródeł i raport pobierania |
-| `POST /aed-api/refresh` | ponowne pobranie z dane.gov.pl |
+| Mieszkaniec | Publiczna mapa, lista, tabela, źródła i eksport bez logowania. |
+| Dyspozytor z grupy „Służby AED” | Widok dla służb i informacja o sprawności. |
+| Redaktor instytucji | Publikowanie i aktualizacja zasobów własnego dostawcy w panelu mcod. |
+| Superadministrator | Dodatkowo numer seryjny, daty ważności baterii i elektrod oraz oznaczenie potencjalnego duplikatu. Przykłady wartości chronionych są syntetyczne. |
 
-### Scraping
+Jeżeli minął najwcześniejszy ze znanych terminów baterii i elektrod, rejestr pokazuje **Po terminie**. Dyspozytor widzi wynik tej reguły bez ujawniania dat. Kolejne publikacje publicznego pliku oraz eksporty respektują zakres danych przewidziany dla odbiorcy.
 
-Jedynym źródłem danych jest **dane.gov.pl** (`rozwiazanie/scraping/danegov.py`): API 1.4, czyli wyszukanie zbiorów,
-ich zasobów, potem wierszy albo pliku CSV/GeoJSON. Współrzędne pochodzą z ról mapowych nadanych przez dostawcę
-(`label`, `b`, `l`), a gdy ich brak, z nazw kolumn. Licencja rekordu jest brana z metadanych zbioru.
+## Jak uruchomić prototyp
 
-Samo pobranie, bez serwera: `python -m rozwiazanie.scraping.run --raport`. Jakie zbiory widzi wyszukiwarka dane.gov.pl (bez pobierania plików): `python -m rozwiazanie.scraping.run --szukaj`; pytamy o kilka odmian słowa „defibrylator” i o „AED”, bo wyszukiwarka nie zawsze odmienia wyrazy, a dodatkowe frazy można dopisać w `config.json` (`danegov.queries`). Zagregowana tabela do pliku: `python -m rozwiazanie.scraping.run --offline --xlsx` (albo `--csv`), wynik w `data/rejestr_aed.xlsx`. Każdy zasób przechodzi przez standaryzację do złotego standardu (schemat Oliwii, `common/aed_columns.json`): `rozwiazanie/scraping/czytniki.py` czyta dowolny plik (CSV/XLSX/ODS/XLS/JSON/GeoJSON/XML/KML/ZIP, kodowanie i separator wykrywane automatycznie), `standard.py` mapuje kolumny po synonimach i po wartościach i normalizuje wartości (przecinek dziesiętny, zamienione lat/lon, PUWG 1992/2000, słowniki, daty, województwo), `geokod.py` uzupełnia braki z geokodera GUGiK (adresy bez współrzędnych, brakująca ulica przy samych współrzędnych; dane ze zbioru mają pierwszeństwo). Zwykły start korzysta tylko z pamięci `data/cache/geokod.json`, która jest w repozytorium; nowe zapytania wysyła osobny krok `python -m rozwiazanie.scraping.run --geokoduj` (najwyżej 300 zapytań, 1 s odstępu, po odmowie GUGiK przerwa 24 h zapisana w pliku), po którym plik commitujemy. Nową nazwę kolumny obsługuje się dopisaniem synonimu w `common/aed_columns.json`, bez zmiany kodu; nierozpoznane kolumny i odrzucone wiersze są w raporcie (`--raport`, `--diagnoza`). Agregacja (`rozwiazanie/scraping/agregacja.py`, logika eksportu XLSX z gałęzi natka_branch) zapisuje jedną tabelę: CSV z separatorem `;`, TRUE/FALSE, RRRR-MM-DD, duplikaty po SN albo do 15 m. Działa z `openpyxl` albo bez niego. Wynik trafia do `data/cache/danegov.json`,
-więc serwis działa też bez internetu. Nie korzystamy z aplikacji ani serwisów, których regulamin zabrania pobierania danych.
+1. Na Windows przygotuj Ubuntu w WSL, działający Docker Engine i Docker Compose v2 w tej dystrybucji. Rozpakuj cały projekt do jednego katalogu. Pierwszy start wymaga internetu do pobrania obrazów i zależności.
+2. Uruchom `start.bat`. W Linuksie użyj `sh start.sh`. Skrypt uruchamia usługi, przygotowuje bazę, publikuje pliki i sprawdza odpowiedzi API. Poczekaj na końcowy komunikat „OK” z identyfikatorem zbioru i liczbą rekordów.
+3. Na Windows uruchom `demo.bat`. Otwiera osobny profil Edge lub Chrome skonfigurowany na lokalne domeny. W innej przeglądarce skonfiguruj nazwy `mcod.local`, `api.mcod.local`, `admin.mcod.local` i `cms.mcod.local` na 127.0.0.1 oraz zaufanie do lokalnego certyfikatu.
+4. Wejdź do [rejestru](https://mcod.local/), [portalu](https://mcod.local/pl) lub [panelu redakcyjnego](https://admin.mcod.local/). Hasła utworzonych kont operator znajdzie w lokalnym pliku `../.raed-lokalne/dane/konta-demo.txt`. Zespół nie musi dołączać tego pliku do zgłoszenia.
+5. Po pokazie uruchom `stop.bat`. Wolumeny zachowują dane między uruchomieniami.
 
-## Dlaczego makieta portalu, a nie backend `mcod`
+**Konfiguracja zarejestrowanego login.gov.pl.** Operator umieszcza klucz i certyfikat w `../.raed-lokalne/wk/key.pem` i `../.raed-lokalne/wk/cert.pem`. W `../.raed-lokalne/mcod.env` ustawia uzgodnione dla tej samej integracji wartości `LOGINGOVPL_ISSUER`, `LOGINGOVPL_SSO_URL`, `LOGINGOVPL_ARTIFACT_RESOLVE_URL`, `LOGINGOVPL_SL_URL` i `LOGINGOVPL_ASSERTION_CONSUMER_URL`. Adres powrotu prowadzi do `/logingovpl/idp` w domenie panelu. Po ponownym starcie operator powiązuje konto mcod z tożsamością WK.
 
-Backend portalu (`mcod`, Django) do uruchomienia potrzebuje m.in. PostgreSQL, Elasticsearch i Redis. Żeby prototyp
-dało się uruchomić jedną komendą, API zbioru AED jest odtworzone w `portal/backend/aed_dataset.py` w formacie API
-portalu 1.4, a pozostałe dane portalu są czytane z produkcyjnego dane.gov.pl. W prawdziwym portalu zbiór AED
-dodaje dostawca w panelu, a zasoby wskazują pliki i strony serwisu AED.
+## Jak działa integracja i gdzie jest kod
 
-### Logowanie przez dane.gov.pl
+| Element | Odpowiedzialność i źródła |
+| --- | --- |
+| Katalog mcod | Modele Django instytucji, zbioru, zasobu i pliku. PostgreSQL przechowuje dane, Elasticsearch indeksuje zasoby, Celery i RabbitMQ przetwarzają zadania, Redis obsługuje m.in. sesje. [Backend portalu](mcod/) |
+| Scalenie AED | Redaktor wybiera pliki podobnie jak w mechanizmie wykazów DGA. Publikator utrzymuje stały identyfikator wspólnego wykazu, zapisuje pomiary i udostępnia zasoby przez standardowe API portalu 1.4. [Scalanie](integracja/wykaz.py) · [polecenie publikacji](mcod/mcod/resources/management/commands/publikuj_aed.py) |
+| Rejestr | Widoki Django korzystają z sesji portalu. Strony rejestru, mapa Leaflet, czytniki formatów, filtry i eksporty są w [kodzie aplikacji](rozwiazanie/). Nazwy pól, typy i synonimy są we [wspólnym schemacie](common/aed_columns.json). |
+| Portal użytkownika | Nginx udostępnia portal Angular, API, CMS i strony rejestru. Projekt zawiera [wersję uruchomieniową i źródła Angular](portal/frontend/). |
+| Uruchomienie i testy | [Skrypt startowy](start.sh), [konfiguracja usług AED](mcod/compose.aed.yml), [testy rejestru](tests/) i [test odbiorczy przez HTTPS](integracja/sprawdz.py). |
 
-Serwis nie ma własnych haseł. „Zaloguj się przez dane.gov.pl” prowadzi do oryginalnego formularza „Zaloguj się”
-makiety portalu (wybierz „Zaloguj się e-mailem i hasłem”). Po zalogowaniu portal wraca do rejestru, a serwis
-sprawdza token portalu w `GET /api/auth/user` i bierze z konta rolę. Konto służb (`aed_rola: sluzby_aed`) i
-administrator portalu widzą kolumny chronione; pozostali widzą dane publiczne. „Wyloguj” kończy sesję w portalu.
+**Sprawdzenie techniczne.** Po starcie uruchom `sh integracja/test-registry.sh`. Dodatkowo z katalogu `mcod` uruchom poniższe polecenie. Test podmienia plik dostawcy, sprawdza zmianę wykazu i wycofanie oznaczenia, po czym wycofuje zmiany testowe.
 
-Konta demo (makieta portalu, `portal/backend/konta.py`; tylko na localhost):
+```sh
+docker compose -p aed2 -f docker-compose.local.yml -f compose.aed.yml exec rejestr python manage.py testuj_scalanie_aed
+```
 
-| E-mail | Hasło | Rola w rejestrze |
-| --- | --- | --- |
-| `sluzby@aed.demo` | `demo-aed` | służby AED: kolumny chronione |
-| `admin@aed.demo` | `demo-aed` | administrator portalu: kolumny chronione |
-| `obywatel@aed.demo` | `demo-aed` | zwykłe konto: dane publiczne |
+## Ograniczenia i dostępność
 
-Na produkcji to samo działa z prawdziwym kontem dane.gov.pl po dodaniu pola roli w mcod (`mcod_wsad/README.md`).
+- Stan demonstracyjny obejmuje cztery miasta. Część źródeł podaje tylko adres lub nazwę budynku. Zespół nie prowadził terenowej weryfikacji każdego urządzenia. Liczby na wykresach oznaczają pozycje wykazu. Nierozpoznane jednostki terytorialne tworzą osobną grupę.
+- Historia zaczyna się od pierwszej publikacji. Następny pomiar powstaje przy zmianie publicznego CSV lub przypisania do obszarów. Jedna publikacja daje jeden punkt historii.
+- Wstępnie załadowane pliki pozwalają czytać dane lokalnie. Zewnętrzne kafelki mapy i nawigacja potrzebują internetu. Domyślnym sposobem logowania w demonstracji jest lokalne konto e-mail mcod. Rzeczywiste logowanie przez login.gov.pl wymaga zarejestrowanej integracji z Węzłem Krajowym i poświadczeń operatora.
+- Celem dostępności jest poziom AA WCAG 2.2. W rejestrze sprawdzono m.in. kontrast w trybach użytkownika, powiększenie tekstu oraz układ mobilny o szerokości 320 i 390 px. Dostępne są również tabela i lista wyników. Te próby nie zastępują pełnego audytu wszystkich kryteriów oraz testów z użytkownikami technologii asystujących. [Standard WCAG — W3C](https://www.w3.org/WAI/standards-guidelines/wcag/)
 
-## Ograniczenia prototypu
+## Pochodzenie i autorstwo
 
-- Bez sieci strony portalu (np. lista zbiorów, treści CMS) i podkład mapy pokażą błędy ładowania;
-  serwis AED działa na danych z pamięci podręcznej.
-- Zbiór AED jest dopisywany do wyników wyszukiwania, gdy fraza zawiera np. „AED” lub „defibrylator” i nie są
-  zaznaczone inne filtry. Reszta wyników pochodzi z produkcyjnego API.
-- Dane pochodzą wyłącznie z dane.gov.pl, więc rejestr jest tak pełny, jak zbiory opublikowane tam przez dysponentów.
-- Przy tworzeniu kodu korzystano z narzędzi AI (do ujawnienia zgodnie z regulaminem konkursu).
+Bazę mcod i portalu Angular dostarczył organizator. Informacje o komponentach Leaflet i użytym godle znajdują się w katalogu `rozwiazanie/frontend/vendor`. Wkład projektu obejmuje m.in. standard danych AED, mechanizm scalania, rejestr, historię publikacji i materiały demonstracyjne. W pracach nad kodem i materiałami wykorzystano AI. Przed wysłaniem zespół powinien przejrzeć końcową wersję i samodzielnie potwierdzić swój wkład oraz prawa do zgłaszanych materiałów z uwzględnieniem warunków komponentów i danych źródłowych. [Kod źródłowy portalu dane.gov.pl](https://dane.gov.pl/source-code/)
 
-## Licencje komponentów
-
-- Frontend portalu dane.gov.pl: MIT. Leaflet 1.9.4: BSD-2-Clause (`rozwiazanie/frontend/vendor/leaflet/LICENSE`).
-- Godło RP w nagłówku serwisu: wzór z Wikimedia Commons, źródło i zasady użycia w `rozwiazanie/frontend/vendor/godlo/ZRODLO.md`.
-- Podkład mapy (kafelki, jak w portalu dane.gov.pl): © współtwórcy OpenStreetMap.

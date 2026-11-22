@@ -13,12 +13,13 @@ import unicodedata
 from collections import Counter
 from datetime import date, timedelta
 
+from .auth import ROLE_SLUZBY
 from .columns import COLUMNS, ROLE_ADMIN
 
 _KOL = {c["pole"]: c for c in COLUMNS}
 SLOWNIK_DOSTEPNOSCI = {"24/7": "Całodobowo (24/7)", "GODZINY_OTWARCIA": "W godzinach otwarcia",
                        "TYLKO_PERSONEL": "Tylko personel"}
-SLOWNIK_STATUSU = {"SPRAWNY": "Sprawny", "W_SERWISIE": "W serwisie", "NIESPRAWNY": "Niesprawny", "NIEZNANY": "Nieznany"}
+SLOWNIK_STATUSU = {"PO_TERMINIE": "Po terminie", "SPRAWNY": "Sprawny", "W_SERWISIE": "W serwisie", "NIESPRAWNY": "Niesprawny", "NIEZNANY": "Nieznany"}
 TERMINY = {"przeterminowane": "Przeterminowane", "90dni": "Kończy się w ciągu 90 dni", "wazne": "Ważne",
            "brak": "Brak danych"}
 
@@ -98,7 +99,7 @@ def aktywne(params: dict, rola: str) -> dict[str, str]:
         if pole == "otwarte_teraz":
             if dozwolone("opening_hours", rola):
                 out[pole] = v
-        elif dozwolone(pole, rola) and (rola == ROLE_ADMIN or pole not in FILTRY_ADMIN):
+        elif dozwolone(pole, rola) and (rola in (ROLE_ADMIN, ROLE_SLUZBY) or pole not in FILTRY_ADMIN):
             out[pole] = v
     return out
 
@@ -127,7 +128,7 @@ def definicje(rows: list[dict], rola: str) -> dict:
             f["liczba"] = sum(1 for r in rows if wartosc(r, f["pole"], RODZAJE.get(f["pole"], "wybor"), dzis) == f["wartosc"])
     kategorie = []
     for nazwa, pola in KATEGORIE:
-        if nazwa in KATEGORIE_ADMIN and rola != ROLE_ADMIN:
+        if nazwa in KATEGORIE_ADMIN and rola not in (ROLE_ADMIN, ROLE_SLUZBY):
             continue
         filtry = []
         for pole, rodzaj in pola:
@@ -156,10 +157,11 @@ def definicje(rows: list[dict], rola: str) -> dict:
     return {"rola": rola, "najwazniejsze": naj, "kategorie": kategorie}
 
 
-def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8) -> list[dict]:
+def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8, obszary: list[tuple[str, str]] | None = None) -> list[dict]:
     """Podpowiedzi do pola „Adres, miejscowość lub lokalizacja” z danych rejestru (tylko kolumny jawne):
     cały kraj („Polska”), miejscowości, gminy i powiaty (gdy jest słownik TERC), województwa, ulice z miejscowością,
-    kody pocztowe. Najpierw dopasowanie od początku słowa."""
+    kody pocztowe. `obszary`: (nazwa, typ) podpowiadane także bez AED w rejestrze (wszystkie województwa, powiaty
+    i gminy ze słownika TERC). Najpierw dopasowanie od początku słowa, potem obszary z AED."""
     q = _sortkey(fraza.strip())
     if len(q) < 2:
         return []
@@ -174,6 +176,9 @@ def podpowiedzi(rows: list[dict], fraza: str, limit: int = 8) -> list[dict]:
             if tekst:
                 licz[tekst] += 1
                 typ.setdefault(tekst, rodzaj)
+    for tekst, rodzaj in obszary or []:  # obszary bez AED w rejestrze (liczba 0)
+        licz.setdefault(tekst, 0)
+        typ.setdefault(tekst, rodzaj)
     trafienia = []
     for tekst, n in licz.items():
         t = _sortkey(tekst)

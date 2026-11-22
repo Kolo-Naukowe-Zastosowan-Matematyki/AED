@@ -45,7 +45,7 @@
    "opis": "TRUE: wymagany klucz, kod albo portier; FALSE: wolny dostęp.",
    "synonimy": ["is_locked", "czy_zamkniety", "zamkniety", "klucz", "kod_dostepu", "szafka_zamykana", "zabezpieczenie", "wymagany_klucz", "locked"]},
   {"pole": "operational_status", "nazwa": "Status sprawności", "typ": "string", "wymagalnosc": "wymagane", "wymagana": true, "chroniona": false,
-   "opis": "Słownik: SPRAWNY, NIESPRAWNY, W_SERWISIE, NIEZNANY. Domyślnie NIEZNANY.",
+   "opis": "Słownik: SPRAWNY, NIESPRAWNY, W_SERWISIE, PO_TERMINIE, NIEZNANY. Domyślnie NIEZNANY.",
    "slownik": "operational_status",
    "synonimy": ["operational_status", "status", "status_sprawnosci", "status_operacyjny", "sprawnosc", "stan", "stan_techniczny", "czy_sprawny"]},
   {"pole": "operator_name", "nazwa": "Dysponent / Operator", "typ": "string", "wymagalnosc": "wymagane", "wymagana": true, "chroniona": false,
@@ -74,6 +74,7 @@
    "TYLKO_PERSONEL": ["tylko_personel", "personel", "pracownicy", "dla_pracownikow", "ochrona", "portier", "ograniczony", "na_zgloszenie", "private", "prywatny", "permit", "no", "nie", "wewnetrzny"]
   },
   "operational_status": {
+   "PO_TERMINIE": ["po_terminie"],
    "SPRAWNY": ["sprawny", "sprawne", "dziala", "aktywny", "ok", "tak", "yes", "operational", "w_uzyciu"],
    "NIESPRAWNY": ["niesprawny", "niesprawne", "uszkodzony", "nie_dziala", "awaria", "nieaktywny", "nie", "no", "wycofany"],
    "W_SERWISIE": ["w_serwisie", "serwis", "przeglad", "w_naprawie", "konserwacja", "naprawa"],

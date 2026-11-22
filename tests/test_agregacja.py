@@ -2,6 +2,7 @@
 
 Uruchomienie:  python -m unittest discover -s tests -v
 """
+from datetime import date
 import csv
 import io
 import sys
@@ -50,6 +51,19 @@ class AgregacjaTest(unittest.TestCase):
         self.assertEqual(rows[1]["availability_type"], "GODZINY_OTWARCIA")
         self.assertEqual(str(rows[2]["record_updated_at"]), "2026-11-21")  # data pobrania, gdy brak weryfikacji
 
+    def test_expiration_boundary_and_dispatcher_export(self):
+        day = date(2026, 11, 22)
+        row = {"operational_status": "SPRAWNY", "pad_expiration_date": "2026-11-22"}
+        self.assertEqual(ag.status_sprawnosci(row, day), "SPRAWNY")
+        row["battery_expiration_date"] = "2026-11-21"
+        self.assertEqual(ag.status_sprawnosci(row, day), "PO_TERMINIE")
+        row["battery_expiration_date"] = "brak"
+        self.assertEqual(ag.status_sprawnosci(row, day), "SPRAWNY")
+        data = FakeProtected({"a1": {"pad_expiration_date": "2000-01-01", "aed_sn": "SERIAL"}})
+        _, rows = ag.agreguj(RECS, "sluzby_aed", data)
+        self.assertEqual(rows[0]["operational_status"], "PO_TERMINIE")
+        self.assertTrue(set(columns.PROTECTED_FIELDS).isdisjoint(rows[0]))
+
     def test_admin_table_and_duplicates(self):
         prot = FakeProtected({"a1": {"aed_sn": "SN-9"}, "a3": {"aed_sn": "SN-9", "pad_expiration_date": "2027-01-31"}})
         cols, rows = ag.agreguj(RECS, "admin", prot)
@@ -61,14 +75,14 @@ class AgregacjaTest(unittest.TestCase):
     def test_csv_golden_standard(self):
         body = ag.do_csv(*ag.agreguj(RECS, "admin", FakeProtected({}))).decode("utf-8-sig")
         header = body.splitlines()[0]
-        self.assertTrue(header.startswith("aed_sn;latitude;longitude;region;city;postal_code;street_address;is_indoor"))
+        self.assertEqual(header.split(";"), [c["nazwa"] for c in columns.COLUMNS])
         rows = list(csv.DictReader(io.StringIO(body), delimiter=";"))
-        self.assertEqual(rows[0]["is_indoor"], "TRUE")
-        self.assertEqual(rows[2]["is_indoor"], "FALSE")
-        self.assertEqual(rows[1]["is_indoor"], "")
-        self.assertEqual(rows[0]["latitude"], "52.2297")                 # kropka dziesiętna
-        self.assertEqual(rows[0]["record_updated_at"], "2026-10-01")
-        self.assertEqual(rows[2]["possible_duplicate"], "FALSE")
+        self.assertEqual(rows[0]["Czy wewnątrz budynku?"], "TRUE")
+        self.assertEqual(rows[2]["Czy wewnątrz budynku?"], "FALSE")
+        self.assertEqual(rows[1]["Czy wewnątrz budynku?"], "")
+        self.assertEqual(rows[0]["Szerokość geograficzna"], "52.2297")                 # kropka dziesiętna
+        self.assertEqual(rows[0]["Data aktualizacji"], "2026-10-01")
+        self.assertEqual(rows[2]["Potencjalny duplikat"], "FALSE")
 
     def test_xlsx_single_sheet_both_writers(self):
         cols, rows = ag.agreguj(RECS, "publiczny")
@@ -83,7 +97,7 @@ class AgregacjaTest(unittest.TestCase):
         for body in (ag._xlsx_stdlib(cols, rows), ag.do_xlsx(cols, rows)):
             ws = openpyxl.load_workbook(io.BytesIO(body)).active
             self.assertEqual(ws.title, "AED")
-            self.assertEqual([c.value for c in ws[1]], [c["pole"] for c in cols])
+            self.assertEqual([c.value for c in ws[1]], [c["nazwa"] for c in cols])
             self.assertEqual(ws.max_row, 4)
 
 

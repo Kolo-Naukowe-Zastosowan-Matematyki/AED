@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rozwiazanie.scraping import danegov as source_danegov
+from .columns import ProtectedData
 from .hours import is_open
 from .schema import AED, DOSTEP
 
@@ -33,6 +34,7 @@ class Store:
     def __init__(self, base: Path, cfg: dict):
         self.base = base
         self.cfg = cfg
+        self.protected = ProtectedData(base)
         self.cache_dir = base / "data" / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
@@ -63,14 +65,22 @@ class Store:
                         for row in std]
         self._points_cache = None
 
-    def _save_cache(self, name: str, records: list[AED], report: list | None = None):
+    def _save_cache(self, name: str, records: list[AED], report: list | None = None, **metadata):
         path = self.cache_dir / f"{name}.json"
-        payload = {"fetched_at": datetime.now().isoformat(timespec="seconds"),
-                   "records": [r.to_dict() | {"extra": r.extra} for r in records], "report": report or []}
+        payload = {**metadata, "fetched_at": datetime.now().isoformat(timespec="seconds"),
+                   "records": [dict(r.to_dict(), extra=r.extra) for r in records], "report": report or []}
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
         return payload["fetched_at"]
+
+    def reload_published(self):
+        path = self.cache_dir / "danegov.json"
+        with self.lock:
+            stamp = path.stat().st_mtime_ns
+            if getattr(self, "_published_stamp", None) != stamp:
+                self._load_cache("danegov")
+                self._published_stamp = stamp
 
     def _load_cache(self, name: str) -> bool:
         path = self.cache_dir / f"{name}.json"
@@ -82,6 +92,7 @@ class Store:
             if "<" in str(r.extra.get("zbior", "")):
                 r.extra["zbior"] = re.sub(r"<[^>]+>", "", r.extra["zbior"])
         with self.lock:
+            self.protected.reload()
             self.by_source[name] = recs
             self.status[name] = {"stan": "gotowe (z pamięci podręcznej)", "rekordy": len(recs),
                                  "pobrano": payload["fetched_at"], "raport": payload.get("report", [])}
@@ -162,17 +173,16 @@ class Store:
             d["otwarte_teraz"] = is_open(r.godziny_dostepnosci)
             d["zbior"] = r.extra.get("zbior", "")
             d["idx"] = idx
-            d["standard"] = dict(self.std[idx]) if idx < len(self.std) else {}  # kolumny chronione usuwa app.visible
+            d["standard"] = self._standard(idx) if idx < len(self.std) else {}  # kolumny chronione usuwa app.visible
             return d
 
-    def _z_chronionymi(self, idxs, protected) -> list[dict]:
-        rows = []
-        for i in idxs:
-            row = self.std[i]
-            if protected is not None:
-                row = {**row, **{k: v for k, v in protected.get(self.records[i].id_aed).items() if v not in ("", None)}}
-            rows.append(row)
-        return rows
+    def _standard(self, idx, protected=None):
+        from rozwiazanie.scraping.agregacja import status_sprawnosci
+        source = protected if protected is not None else self.protected
+        row = dict(self.std[idx])
+        row.update({k: v for k, v in source.get(self.records[idx].id_aed).items() if v not in ("", None)})
+        row["operational_status"] = status_sprawnosci(row)
+        return row
 
     def filter_defs(self, role: str, protected=None, query: str = "", location: str = "") -> dict:
         """Opcje i liczniki filtrów liczone dla bieżącego wyszukiwania (fraza i miejsce), nie dla całego rejestru:
@@ -180,14 +190,19 @@ class Store:
         from .filtry import definicje
         with self.lock:
             idxs = self.matching(query, location, protected=protected)
-            rows = self._z_chronionymi(idxs, protected)
+            rows = [self._standard(i, protected) for i in idxs]
         return definicje(rows, role)
 
     def suggest(self, phrase: str, limit: int = 8) -> list[dict]:
         from .filtry import podpowiedzi
         with self.lock:
             rows = [{**row, **ob} for row, ob in zip(self.std, self.obszary or [{}] * len(self.std))]
-        return podpowiedzi(rows, phrase, limit)
+        # wszystkie województwa, a ze słownikiem TERC także powiaty i gminy: podpowiadamy je również bez AED
+        from rozwiazanie.scraping.standard import TERYT_WOJ
+        obszary = [(w, "województwo") for w in TERYT_WOJ.values()]
+        if self.terc:
+            obszary += self.terc.obszary_do_podpowiedzi()
+        return podpowiedzi(rows, phrase, limit, obszary)
 
     @staticmethod
     def _search_text(value: str) -> str:
@@ -221,9 +236,7 @@ class Store:
             matches = []
             for idx, record in enumerate(self.records):
                 if filtry:
-                    row = self.std[idx]
-                    if protected is not None:
-                        row = {**row, **{k: v for k, v in protected.get(record.id_aed).items() if v not in ("", None)}}
+                    row = self._standard(idx, protected)
                     otwarte = is_open(record.godziny_dostepnosci, now) if "otwarte_teraz" in filtry else None
                     if record.dostep == "publiczny" and not record.godziny_dostepnosci:
                         otwarte = True if otwarte is None else otwarte
@@ -334,7 +347,7 @@ class Store:
         from rozwiazanie.scraping.agregacja import agreguj
         with self.lock:
             fetched = self.status.get("danegov", {}).get("pobrano") or ""
-        return agreguj(self.export_records(), role, protected, fetched)
+        return agreguj(self.export_records(), role, protected if protected is not None else self.protected, fetched)
 
     def export_csv(self, role: str = "publiczny", protected=None) -> bytes:
         from rozwiazanie.scraping.agregacja import do_csv

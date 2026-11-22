@@ -3,23 +3,18 @@
     "enabled": true,
     "queries": [],
     "dataset_ids": [],
-    "resource_ids": []
+    "_opis_ids": "Zbiory i zasoby dane.gov.pl pobierane zawsze, także gdy wyszukiwarka ich nie zwróci (2625221: wykaz AED Legionowa w zbiorze „Zdrowie”).",
+    "resource_ids": [
+      "2625221"
+    ]
   },
   "serwis": {
     "_opis": "Serwis AED (instancja B). url: publiczny adres serwisu dla linków z portalu; puste = http://localhost:<port serwisu>.",
     "tytul": "Rejestr AED",
     "url": ""
   },
-  "zbior_aed": {
-    "_opis": "Zbiór /pl/dataset/aed,system-ewidencji-zasobow-aed w makiecie portalu. Adresy względne prowadzą do serwisu AED. Puste pola = wartości domyślne z portal/backend/aed_dataset.py.",
-    "rejestr_url": "/",
-    "zrodlo_url": "",
-    "dostawca": {
-      "id": "",
-      "nazwa": "",
-      "slug": ""
-    },
-    "czestotliwosc": "Codziennie",
-    "licencja": "CC0 1.0"
+  "auth": {
+    "api_url": "http://mcod-local-api:8000/1.4",
+    "logowanie_url": "/pl/user/login?redirect=/rejestr"
   }
 }

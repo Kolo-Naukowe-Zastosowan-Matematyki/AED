@@ -1,15 +1,8 @@
-"""Serwis AED (instancja B): własny frontend, backend i scraping, niezależny od dane.gov.pl.
-
-    /                 rejestr AED (strona główna, rozwiazanie/frontend/index.html)
-    /mapa             mapa wszystkich AED
-    /aed-api/...      API serwisu (opis w README.md)
-
-Portal dane.gov.pl (instancja A) tylko linkuje do tych stron i pobiera z /aed-api/rejestr.json dane
-do zasobów zbioru „System Ewidencji Zasobów AED”. Tylko biblioteka standardowa Pythona.
-"""
+"""Widoki rejestru AED dla Django w środowisku mcod."""
 from __future__ import annotations
 
 import json
+import os
 import logging
 import mimetypes
 import threading
@@ -19,8 +12,9 @@ from datetime import date
 from http import HTTPStatus
 from pathlib import Path
 
-from common.http import BaseHandler
-from rozwiazanie.backend.auth import Auth
+from django.contrib.auth import logout
+from django.http import HttpResponse, JsonResponse
+from rozwiazanie.backend.auth import Auth, ROLE_SLUZBY
 from rozwiazanie.backend.columns import PROTECTED_FIELDS, ROLE_ADMIN, ProtectedData, apply_role, columns_for
 from rozwiazanie.backend.filtry import aktywne as active_filters
 from rozwiazanie.backend.map_export import build_map_html
@@ -32,7 +26,26 @@ PAGES = {"/": "index.html", "/index.html": "index.html", "/rejestr.html": "index
          "/tabela": "tabela.html", "/tabela.html": "tabela.html"}
 
 
-class SerwisHandler(BaseHandler):
+class Rejestr:
+    def __init__(self, request):
+        self.request = request
+        self.path = request.get_full_path()
+        self.headers = request.headers
+
+    def _origin(self):
+        return self.request.build_absolute_uri("/").rstrip("/")
+
+    @staticmethod
+    def _send(body, ctype, status=200, extra=None):
+        response = HttpResponse(body, content_type=ctype, status=status)
+        for name, value in (extra or {}).items():
+            response[name] = value
+        return response
+
+    @staticmethod
+    def _json(obj, status=200):
+        return JsonResponse(obj, safe=False, status=status, json_dumps_params={"ensure_ascii": False})
+
     store: Store = None
     auth: Auth = None
     protected: ProtectedData = None
@@ -42,6 +55,8 @@ class SerwisHandler(BaseHandler):
     _map_lock = threading.Lock()
 
     def _route(self, method: str):
+        if os.environ.get("AED_KATALOG") == "1":
+            self.store.reload_published()
         url = urllib.parse.urlparse(self.path)
         if url.path.startswith("/aed-api/"):
             try:
@@ -55,7 +70,7 @@ class SerwisHandler(BaseHandler):
         if method == "GET" and url.path in PAGES:
             body = (FRONTEND / PAGES[url.path]).read_bytes()
             return self._send(body, "text/html; charset=utf-8", extra={"Cache-Control": "no-cache"})
-        self._send("<h1>Nie znaleziono</h1><p><a href='/'>Rejestr AED</a></p>".encode(),
+        return self._send("<h1>Nie znaleziono</h1><p><a href='/'>Rejestr AED</a></p>".encode(),
                    "text/html; charset=utf-8", HTTPStatus.NOT_FOUND)
 
     def _vendor(self, path: str):
@@ -67,24 +82,32 @@ class SerwisHandler(BaseHandler):
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype == "application/javascript":
             ctype += "; charset=utf-8"
-        self._send(target.read_bytes(), ctype, extra={"Cache-Control": "public, max-age=86400"})
+        return self._send(target.read_bytes(), ctype, extra={"Cache-Control": "public, max-age=86400"})
 
     def _map(self, site_url: str) -> bytes:
         """Mapa jako strona serwisu (site_url="") albo plik do pobrania (pełny adres serwisu w linkach)."""
         recs = list(self.store.records)
         with self._map_lock:
+            version = (len(recs), getattr(self.store, "_published_stamp", None))
             c = self._map_cache.get(site_url)
-            if c and c[1] == len(recs) and time.time() - c[0] < 300:
+            if c and c[1] == version and time.time() - c[0] < 300:
                 return c[2]
             date = (self.store.sources_info().get("danegov", {}).get("pobrano") or time.strftime("%Y-%m-%d"))[:10]
             html = build_map_html(recs, self.title, date, site_url)
-            self._map_cache[site_url] = (time.time(), len(recs), html)
+            self._map_cache[site_url] = (time.time(), version, html)
             return html
 
     def _api(self, method: str, p: str, q: dict):
         s = self.store
         # Rola z tokenu (ciasteczko serwisu albo JWT portalu). Kolumny chronione tylko dla administratora.
-        account = self.auth.account(self.headers)
+        user = self.request.user
+        if user.is_authenticated:
+            role = ROLE_ADMIN if user.is_superuser else "publiczny"
+            if not user.is_superuser and user.groups.filter(name="Służby AED").exists():
+                role = ROLE_SLUZBY
+            account = {"rola": role, "uzytkownik": user.fullname or user.email}
+        else:
+            account = self.auth.account(self.headers)
         role = account["rola"]
 
         def visible(item: dict) -> dict:
@@ -110,7 +133,7 @@ class SerwisHandler(BaseHandler):
                 limit = min(max(int(q.get("limit", 25)), 1), 5000 if q.get("wszystko") == "1" else 100)
                 offset = max(int(q.get("offset", 0)), 0)
                 # „Nazwa obiektu lub numer AED” i filtry po kolumnach chronionych: tylko administrator (wymuszone tu)
-                res = s.search(q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", ""), q.get("dostep", ""),
+                res = s.search(q.get("q", "") if role in (ROLE_ADMIN, ROLE_SLUZBY) else "", q.get("miejsce", ""), q.get("dostep", ""),
                                q.get("zrodlo", ""), q.get("publiczny", "0") == "1", limit, offset,
                                filtry=active_filters(q, role),
                                protected=self.protected if role == ROLE_ADMIN else None,
@@ -121,7 +144,7 @@ class SerwisHandler(BaseHandler):
             if p == "/filtry":  # definicje filtrów dla roli (kolumny chronione tylko dla administratora)
                 # opcje i liczniki dla bieżącego wyszukiwania (fraza tylko administratora, miejsce)
                 return self._json(s.filter_defs(role, self.protected if role == ROLE_ADMIN else None,
-                                                q.get("q", "") if role == ROLE_ADMIN else "", q.get("miejsce", "")))
+                                                q.get("q", "") if role in (ROLE_ADMIN, ROLE_SLUZBY) else "", q.get("miejsce", "")))
             if p == "/podpowiedzi":  # podpowiedzi do pola adresu: miejscowości, ulice, województwa, kody
                 return self._json({"podpowiedzi": s.suggest(q.get("q", ""), min(int(q.get("n", 8)), 15))})
             if p == "/points":
@@ -131,7 +154,7 @@ class SerwisHandler(BaseHandler):
                 return self._json(visible(d)) if d else self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
             if p == "/nearest":
                 # w obrębie kryteriów z wyszukiwarki: miejsce, fraza (administrator) i filtry dozwolone dla roli
-                kryteria = {"query": q.get("q", "") if role == ROLE_ADMIN else "", "location": q.get("miejsce", ""),
+                kryteria = {"query": q.get("q", "") if role in (ROLE_ADMIN, ROLE_SLUZBY) else "", "location": q.get("miejsce", ""),
                             "filtry": active_filters(q, role),
                             "protected": self.protected if role == ROLE_ADMIN else None}
                 res = s.nearest(float(q["lat"]), float(q["lon"]), min(int(q.get("n", 3)), 20),
@@ -166,12 +189,18 @@ class SerwisHandler(BaseHandler):
         if method == "POST":
             if p == "/auth/logout":
                 self.auth.logout(self.headers)
-                return self._json({"rola": "publiczny"},
-                                  extra={"Set-Cookie": self.auth.logout_cookies(self.headers.get("Host", ""))})
+                logout(self.request)
+                response = self._json({"rola": "publiczny"})
+                from django.conf import settings
+                response.delete_cookie(settings.API_TOKEN_COOKIE_NAME, domain=settings.SESSION_COOKIE_DOMAIN)
+                return response
             if p == "/refresh":
-                threading.Thread(target=s.refresh_danegov, daemon=True).start()
+                if os.environ.get("AED_KATALOG") == "1":
+                    s.reload_published()
+                else:
+                    threading.Thread(target=s.refresh_danegov, daemon=True).start()
                 return self._json({"ok": True}, HTTPStatus.ACCEPTED)
-        self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
+        return self._json({"blad": "nie znaleziono"}, HTTPStatus.NOT_FOUND)
 
 
 def _liczba(v) -> float | None:
@@ -186,11 +215,12 @@ def setup(base: Path, cfg: dict, offline: bool):
     if offline:
         cfg.setdefault("danegov", {})["enabled"] = False
     store = Store(base, cfg)
-    store.start()
-    if offline:
+    if os.environ.get("AED_KATALOG") == "1":
         store._load_cache("danegov")
-    SerwisHandler.store = store
-    SerwisHandler.auth = Auth(cfg.get("auth"))
-    SerwisHandler.protected = ProtectedData(base)
-    SerwisHandler.title = (cfg.get("serwis") or {}).get("tytul", "Rejestr AED")
-    return SerwisHandler
+    else:
+        store.start()
+    Rejestr.store = store
+    Rejestr.auth = Auth(cfg.get("auth"))
+    Rejestr.protected = store.protected
+    Rejestr.title = (cfg.get("serwis") or {}).get("tytul", "Rejestr AED")
+    return Rejestr

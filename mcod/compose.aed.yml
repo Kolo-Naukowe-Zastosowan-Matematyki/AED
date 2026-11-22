@@ -1,0 +1,62 @@
+services:
+  mcod-local-api:
+    environment:
+      AED_COLUMNS_FILE: /opt/aed/common/aed_columns.json
+    volumes:
+      - ../common/aed_columns.json:/opt/aed/common/aed_columns.json:ro
+
+  mcod-local-admin:
+    environment:
+      AED_LOCAL_LOGIN_DEMO: "1"
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://mcod.local/pl}
+      LOGINGOVPL_ASSERTION_CONSUMER_URL: ${LOGINGOVPL_ASSERTION_CONSUMER_URL:-https://admin.mcod.local/logingovpl/idp}
+      LOGINGOVPL_ENC_KEY: ${LOGINGOVPL_ENC_KEY:-/run/wk/key.pem}
+      LOGINGOVPL_ENC_CERT: ${LOGINGOVPL_ENC_CERT:-/run/wk/cert.pem}
+    volumes:
+      - ../../.raed-lokalne/wk:/run/wk:ro
+
+  rejestr:
+    extends:
+      file: docker-compose.local.yml
+      service: mcod-local-admin
+    container_name: mcod-aed-rejestr
+    environment:
+      TZ: Europe/Warsaw
+      AED_KATALOG: "1"
+      COMPONENT: aed
+      DJANGO_SETTINGS_MODULE: mcod.settings.local
+      PYTHONPATH: /opt/aed:/usr/src/mcod_backend
+      AED_OFFLINE: ${AED_OFFLINE:-0}
+    volumes:
+      - ../rozwiazanie:/opt/aed/rozwiazanie:ro
+      - ../common:/opt/aed/common:ro
+      - ../integracja:/opt/aed/integracja:ro
+      - ../jury/Wzorzec-AED.xlsx:/opt/aed/Wzorzec-AED.xlsx:ro
+      - ../config.json:/opt/aed/config.json:ro
+      - ../../.raed-lokalne/dane:/opt/aed/data
+      - ../data/cache:/opt/aed/przyklady:ro
+
+    command: ["gunicorn", "--bind", "0.0.0.0:8010", "--workers", "1", "--threads", "6", "--timeout", "120", "mcod.wsgi:application"]
+    networks:
+      backend:
+        ipv4_address: 172.18.18.111
+
+
+  synchronizacja:
+    extends:
+      service: rejestr
+    container_name: mcod-aed-synchronizacja
+    command: ["python", "manage.py", "monitoruj_aed"]
+    networks:
+      backend:
+        ipv4_address: 172.18.18.112
+
+  inicjalizacja:
+    extends:
+      file: docker-compose.local.yml
+      service: mcod-local-admin
+    container_name: mcod-aed-init
+    profiles: ["manual"]
+    networks:
+      backend:
+        ipv4_address: 172.18.18.113

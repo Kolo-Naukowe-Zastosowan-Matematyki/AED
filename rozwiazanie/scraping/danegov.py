@@ -243,7 +243,9 @@ def standaryzuj_wiersze(rows: list[dict], geo_roles: dict, ctx: dict, entry: dic
     """Wiersze jednego zasobu -> rekordy AED w złotym standardzie; wszystko, co się nie udało, trafia do `entry`."""
     cols = list(dict.fromkeys(k for r in rows[:200] for k in r.keys()))
     mapa = mapuj_kolumny(cols, rows, geo_roles)
-    entry["kolumny"] = mapa["pola"] | ({"latitude+longitude": mapa["para"]} if mapa["para"] else {})
+    entry["kolumny"] = dict(mapa["pola"])
+    if mapa["para"]:
+        entry["kolumny"]["latitude+longitude"] = mapa["para"]
     if mapa["uwagi"]:
         entry["mapowanie"] = mapa["uwagi"]
     if mapa["nierozpoznane"]:

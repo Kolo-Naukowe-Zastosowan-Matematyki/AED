@@ -306,7 +306,7 @@ def woj_z_pna(pna: str) -> str:
 # ---------------------------------------------------------------- mapowanie kolumn
 
 def _synonimy() -> dict[str, list[str]]:
-    return {c["pole"]: [norm(s) for s in c.get("synonimy", [])] for c in KOLUMNY}
+    return {c["pole"]: [norm(c["nazwa"])] + [norm(s) for s in c.get("synonimy", [])] for c in KOLUMNY}
 
 
 # pola opisujące miejsce konkretnego AED: długie elaboraty i teksty wspólne dla całego zbioru są odrzucane

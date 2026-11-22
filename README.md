@@ -8,7 +8,7 @@ RAED zbiera w jednym wykazie lokalizacje automatycznych defibrylatorów zewnętr
 
 | Materiał | Gdzie go znaleźć |
 | --- | --- |
-| Prezentacja z krokami użytkownika, zrzutami z działającego prototypu i ograniczeniami | [Prezentacja techniczna (PDF)](prezentacja/Prezentacja-techniczna.pdf) |
+| Prezentacja z krokami użytkownika, zrzutami z działającego prototypu i ograniczeniami | [Prezentacja techniczna (PDF)](materialy/Prezentacja_techniczna.pdf) |
 | Scenariusz do samodzielnego sprawdzenia | [Instrukcja dla jury](jury/Instrukcja.md) |
 | Publiczne dane do odczytu bez uruchamiania portalu | [Wykaz AED (CSV)](jury/Wykaz-AED.csv) i [źródła (CSV)](jury/Zrodla-AED.csv) |
 | Wzorcowy zakres danych dla dostawcy | [Wzorzec AED (XLSX)](jury/Wzorzec-AED.xlsx) |
